@@ -83,6 +83,16 @@ default surface. Decision (pre-v1, experimental): gate, don't move or delete; re
 tells us whether they should graduate to the default surface (or become hidden friends of `fn`, which
 would make them ADL-reachable like `|` and moot the gate).
 
+**If it ever comes to two symbols.** The gate above is *expression interdiction* via the preprocessor —
+we forbid a symbol at the macro level rather than spend a name. If the design ever genuinely wants a
+*second* first-class name (not just a hidden helper), the alternative is to spend a real sigil rather
+than another macro: `$`, a natural twin to `_`, is the obvious candidate — e.g. `$` as a *generalized
+bind* (a value+type-level hole like `_`, unifying binding under one visible symbol instead of the
+qualified `tacit::bind`). Caveat, and why it isn't here already: `$` in identifiers is a GCC/Clang
+extension, not standard C++ — it's rejected under `-pedantic`, which is exactly why the early `$` usage
+was removed (commit `f1e25db`). So it's parked, not adopted: a live option for the "two symbols" world,
+paid for in portability, to weigh against staying macro-gated at one.
+
 ## Still on the table
 
 **Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`,

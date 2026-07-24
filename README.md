@@ -2,6 +2,8 @@
 
 [![ci](https://github.com/ajg/tacit/actions/workflows/ci.yml/badge.svg)](https://github.com/ajg/tacit/actions/workflows/ci.yml)
 
+> **Status: experimental, pre-1.0.** The API may change, and it isn't released or announced yet.
+
 A tiny, header-only library for **point-free (tacit) programming** in C++23. Its whole public surface
 is one object, `tacit::_`, whose members return closures that forward to a same-named operation on
 whatever they're later applied to — so you can hand operations to algorithms without writing lambdas.
