@@ -105,6 +105,8 @@ across a set of callables, while `_()` (no args) simply invokes — handy for fo
 
 ```cpp
 _(3)(std::negate{});                 // -> -3  (applies negate to 3)
+
+std::vector<std::function<void()>> thunks{ []{}, []{} };
 std::ranges::for_each(thunks, _());  // invoke each nullary callable
 ```
 
