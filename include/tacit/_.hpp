@@ -471,9 +471,15 @@ inline constexpr lieutenant _;
 
 // Closure combinators (Haskell arrow flavour). `_`-agnostic — any callable works — and each returns
 // an fn, so results keep composing (member access, operator sections, `|`, ...).
-//   f | g              left-to-right compose  (operator on fn, above)
+//   f | g              left-to-right compose  (operator on fn, above — always available)
 //   fanout(f, g, ...)  x -> tuple{f(x), g(x), ...}         (Haskell &&&)
 //   first(f) / second(f)   transform one component of a pair   (Haskell first / second)
+//
+// These are free functions in `tacit`, so — unlike `|` (a hidden friend of fn, found by ADL) — they
+// add named symbols reached only by qualification. To keep the default surface at exactly `_` plus
+// the opt-in type-level `bind`, they are gated: `#define TACIT_COMBINATORS` before including to enable
+// them (and their `*_element` cousins below). Off by default; the machinery still compiles either way.
+#ifdef TACIT_COMBINATORS
 template <class... Fs> [[nodiscard]] constexpr auto fanout(Fs... fs) {
   return detail::fn{[fs...](auto &&x) { return std::tuple{fs(x)...}; }};
 }
@@ -483,6 +489,7 @@ template <class F> [[nodiscard]] constexpr auto first(F f) {
 template <class F> [[nodiscard]] constexpr auto second(F f) {
   return detail::fn{[f](auto &&p) { return std::pair{std::get<0>(p), f(std::get<1>(p))}; }};
 }
+#endif // TACIT_COMBINATORS
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
@@ -527,7 +534,9 @@ template <template <class...> class F, class... Args> struct bind {
 // (C++26) path can later extend them to arbitrary aggregates and reflection
 // ranges. They are `_`-agnostic (any callable works) but pair naturally with
 // `_`'s closures, e.g. transform_elements(t, _.size()) or any_of_element(t,
-// _.empty()).
+// _.empty()). Free `tacit::` functions, so — like the closure combinators above
+// — they sit behind `#define TACIT_COMBINATORS` and stay off the default surface.
+#ifdef TACIT_COMBINATORS
 template <class Tup, class F> constexpr void for_each_element(Tup &&t, F &&f) {
   std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); }, std::forward<Tup>(t));
 }
@@ -548,6 +557,7 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
   return std::apply([&](auto &&...xs) { return std::tuple{f(std::forward<decltype(xs)>(xs))...}; },
                     std::forward<Tup>(t));
 }
+#endif // TACIT_COMBINATORS
 
 } // namespace tacit
 

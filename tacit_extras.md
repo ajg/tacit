@@ -1,9 +1,9 @@
 # tacit — extras & design notes
 
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
-shaped the way it is, and what's still on the table. The public surface is still just `tacit::_`
-(plus the free tuple combinators); everything here is either already in `<tacit/_.hpp>` or a
-candidate for it.
+shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
+opt-in type-level `tacit::bind`; the free-function combinators are gated behind `TACIT_COMBINATORS`.
+Everything here is either already in `<tacit/_.hpp>` or a candidate for it.
 
 ## Composition (implemented)
 
@@ -35,6 +35,7 @@ detection that drives blanks is untouched. `fn op value` / `value op fn` compose
 `tacit::for_each_element / any_of_element / all_of_element / none_of_element / transform_elements`
 drive a callable over the elements of a tuple-like, via `std::apply` + fold-expressions (C++23).
 They are `_`-agnostic but pair naturally with `_`'s closures, e.g. `transform_elements(t, _.size())`.
+Opt-in behind `#define TACIT_COMBINATORS` (see the exported-surface note below).
 A `template for` (C++26, `__cpp_expansion_statements`) path can later extend them to arbitrary
 aggregates and reflection ranges behind a `TACIT_HAS_EXPANSION` flag — no API change.
 
@@ -66,22 +67,29 @@ chaining produces a byte-identical object file to pre-hybrid v0.2 (16240 bytes e
 front-end compile time rose ~4% (~40 ms) on a real TU, negligible for parsing the header alone. At
 runtime the composed closures inline away — no dispatch, no allocation.
 
-## Exported surface (decision: document, don't move)
+## Exported surface (decision: gate the free helpers)
 
-The public surface is now `_` plus a handful of *qualified* free helpers (`fanout`, `first`, `second`,
-the `*_element` combinators, `bind`) and the operator forms. The "one symbol" promise is about
-*scope*, and it holds: `using tacit::_;` brings in only `_`; operators arrive via ADL; the type-level
-hole reuses `_` as `struct _` (no new name); and the free helpers are only ever qualified, so they
-never enter a user's scope. Decision (pre-v1, experimental): document this precisely and leave the
-helpers flat in `tacit::` — a sub-namespace would fight the flat-namespace preference, and qualifying
-them already isolates them. Revisit which helpers stay in once usage tells us what's actually wanted.
+The default surface is `_` plus the opt-in type-level `bind`, and it earns the "one symbol" promise on
+*scope*: `using tacit::_;` brings in only `_`; the operator forms (sections, `|`) arrive via ADL as
+hidden friends of `fn`; and the type-level hole reuses `_` as `struct _`, adding no new name. `bind` is
+the sole extra qualified name, and it's inert unless you write it.
+
+The free-function combinators (`fanout`, `first`, `second`, the `*_element` family) are different in
+kind: as free functions in `tacit`, they are *not* ADL-reachable — their arguments associate `std` and
+`tacit::detail`, never `tacit` — so they can only be called qualified, and each is a genuine extra
+symbol. Rather than move them to a sub-namespace (which fights the flat-namespace preference) or drop
+the cleverness, they sit behind `#define TACIT_COMBINATORS`: still in-tree, still tested, but off the
+default surface. Decision (pre-v1, experimental): gate, don't move or delete; revisit once real usage
+tells us whether they should graduate to the default surface (or become hidden friends of `fn`, which
+would make them ADL-reachable like `|` and moot the gate).
 
 ## Still on the table
 
-**Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`),
-plus `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` / `tacit::second`. Each returns an
-`fn`, so results keep composing; `operator|` does not collide with the ranges pipe (its left operand
-is a range, not an `fn`). `f *** g` is just `first(f) | second(g)`.
+**Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`,
+always available), plus the opt-in `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` /
+`tacit::second` (behind `TACIT_COMBINATORS`). Each returns an `fn`, so results keep composing;
+`operator|` does not collide with the ranges pipe (its left operand is a range, not an `fn`).
+`f *** g` is just `first(f) | second(g)`.
 
 **Template-argument members** — `_.get<0>()`, `_.as<int>()`. After the hybrid these go into the
 *shared* vocabulary, so they would work on `_` and every projection at once. A template parameter pack

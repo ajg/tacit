@@ -5,7 +5,6 @@
 #include <ranges>
 #include <string>
 #include <tacit/_.hpp>
-#include <tuple>
 #include <vector>
 
 using tacit::_;
@@ -35,9 +34,5 @@ int main() {
   // a composed predicate through a std algorithm
   std::vector<int> n{1, 2, 3, 4, 5};
   assert(std::ranges::count_if(n, _ % 2 == 0) == 2);
-
-  // and composition still pairs with the tuple combinators
-  auto t = std::tuple{std::vector<int>{1, 2}, std::string("xyz")};
-  assert(tacit::all_of_element(t, _.size() >= 1u) == true);
   return 0;
 }

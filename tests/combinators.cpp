@@ -1,4 +1,6 @@
 // Closure combinators: compose (|), fanout (&&&-style), and first/second on pairs.
+// fanout/first/second are opt-in — request them before including the header.
+#define TACIT_COMBINATORS
 #include <algorithm>
 #include <cassert>
 #include <ranges>

@@ -1,4 +1,6 @@
 // Heterogeneous element combinators driven by `_`-closures over tuple-likes.
+// The *_element combinators are opt-in — request them before including the header.
+#define TACIT_COMBINATORS
 #include <array>
 #include <cassert>
 #include <deque>

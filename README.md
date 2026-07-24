@@ -21,10 +21,9 @@ nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::vie
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
 reached *through* the object, and the operator forms (sections, `|`) are hidden friends found by ADL,
-so they need no `using`. Everything else is a qualified `tacit::` free helper — `fanout`, `first`,
-`second`, the `*_element` tuple combinators, and the type-level `bind` — which never enters your scope
-unless you name it (so prefer `using tacit::_;` over `using namespace tacit;`). The type-level hole
-reuses the same identifier as `struct _`, adding no name of its own.
+so they need no `using`. The only other public name is the opt-in type-level `tacit::bind`, and it
+reuses the same identifier as `struct _`, so it adds no name of its own. (The free-function combinators
+live behind `#define TACIT_COMBINATORS` and are off by default — see [Composition](#composition).)
 
 Prefer `#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the
 `using` for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.
@@ -85,10 +84,15 @@ Every single-argument closure `_` produces is a small composable `fn`; the multi
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
 `x -> size(front(x))` — handy as a projection: `std::ranges::sort(words, {}, _.front().size())`.
 
-A few `_`-agnostic combinators build pipelines, each returning an `fn` so results keep composing:
-`f | g` composes left-to-right (`x -> g(f(x))`), `tacit::fanout(f, g, …)` maps a value to a tuple of
-projections (`x -> {f(x), g(x)}`), and `tacit::first` / `tacit::second` transform one component of a
-pair. `operator|` never clashes with the ranges pipe — its left operand is a range, not an `fn`.
+`f | g` composes closures left-to-right (`x -> g(f(x))`); it's a hidden friend of `fn`, always
+available, and never clashes with the ranges pipe (whose left operand is a range, not an `fn`).
+
+A few more `_`-agnostic combinators are available behind `#define TACIT_COMBINATORS` (off by default,
+to keep the surface at `_` + `bind`): `tacit::fanout(f, g, …)` maps a value to a tuple of projections
+(`x -> {f(x), g(x)}`), `tacit::first` / `tacit::second` transform one component of a pair, and the
+`*_element` family (`transform_elements`, `any_of_element`, …) drives a closure over a tuple-like.
+Each returns an `fn`, so results keep composing. They're free `tacit::` functions rather than hidden
+friends, so they take qualification and a `#define` — the operators (`|`, sections) don't.
 
 ### Application
 
@@ -170,7 +174,7 @@ path) lets you `#if` on whether they exist.
 ## Modules
 
 `import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
-and re-exports `_` and the tuple combinators:
+and re-exports `_` and the type-level `bind`:
 
 ```cpp
 import tacit;
@@ -179,8 +183,10 @@ using tacit::_;
 
 Macros don't cross a module boundary, so the derive generators (`TACIT_LIEUTENANT`, `TACIT_CORE`, …)
 stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to derive your own
-(just as `import std;` exports no macros). Verified on clang; GCC's `-fmodules-ts` isn't reliable for
-this pattern yet, so prefer `#include` there.
+(just as `import std;` exports no macros). For the same reason `TACIT_COMBINATORS` can't be switched
+on from the consumer side; build the interface with `-DTACIT_COMBINATORS` to have it export the
+combinators too. Verified on clang; GCC's `-fmodules-ts` isn't reliable for this pattern yet, so
+prefer `#include` there.
 
 ## Type-level `_`
 
