@@ -86,12 +86,23 @@ would make them ADL-reachable like `|` and moot the gate).
 **If it ever comes to two symbols.** The gate above is *expression interdiction* via the preprocessor —
 we forbid a symbol at the macro level rather than spend a name. If the design ever genuinely wants a
 *second* first-class name (not just a hidden helper), the alternative is to spend a real sigil rather
-than another macro: `$`, a natural twin to `_`, is the obvious candidate — e.g. `$` as a *generalized
-bind* (a value+type-level hole like `_`, unifying binding under one visible symbol instead of the
-qualified `tacit::bind`). Caveat, and why it isn't here already: `$` in identifiers is a GCC/Clang
-extension, not standard C++ — it's rejected under `-pedantic`, which is exactly why the early `$` usage
-was removed (commit `f1e25db`). So it's parked, not adopted: a live option for the "two symbols" world,
-paid for in portability, to weigh against staying macro-gated at one.
+than another macro: `$`, a natural twin to `_`, as a *generalized bind* — a value+type-level hole like
+`_`, unifying binding under one visible symbol instead of the qualified `tacit::bind`.
+
+The clean justification for the glyph is the *zero-hole* framing: define `$`-as-bind so the no-hole
+case degenerates to `$(f, x) == f(x)` — exactly Haskell's `$` (application) — and each positional hole
+is then one step away from `$` toward a section. So Haskell's `$` is the zero-hole special case; you're
+generalizing application to leave gaps, not borrowing the glyph by coincidence. Three caveats keep it
+honest. (1) The mechanism can't transfer: in C++, `$` is only ever an *identifier* (a GCC/Clang
+extension, rejected under `-pedantic`), never an operator — the overloadable-operator set is fixed and
+excludes it — so there is no infix `f $ x` and none of Haskell's `infixr 0` paren-dropping; you get the
+glyph, not the mechanism, and that portability cost is exactly why the early `$` usage was removed
+(commit `f1e25db`). (2) The literal Haskell-`$` analog already exists as `_`'s application form —
+`_(3)` is the `($ 3)` section, `_()` invokes a thunk — so a `$` symbol would really be doing
+sections/bind (currying / `flip` / `.` territory), a different job wearing `$`'s coat. (3) Least
+astonishment: a Haskeller reading C++ `$` expects apply-glue and would find bind-with-holes, so it
+shouldn't be sold as "C++'s `$`". Net: parked, not adopted — a live option for the "two symbols" world,
+priced in portability, to weigh against staying macro-gated at one.
 
 ## Still on the table
 
