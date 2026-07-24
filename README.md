@@ -47,6 +47,9 @@ _ + _             // 2 blanks (a, b)     ->  a + b
 Repeated `_` are *distinct* blanks — there are no positional `_1`/`_2` sigils. Reach for a named
 lambda the moment you need to reorder or reuse an argument.
 
+A blank can also *project*: an `fn` in argument position applies its projection to the fill, so
+`_.push_back(_.size())` is `(c, x) -> c.push_back(size(x))`.
+
 ### Vocabulary
 
 `_` carries a curated first-class vocabulary of standard-library member names (`at`, `push_back`,
@@ -73,6 +76,9 @@ auto head   = _[0];                          // x -> x[0]
 
 Every single-argument closure `_` produces is a small composable `fn`; the multi-blank forms
 (`_.foo(_)`, `_ < _`) stay partial applications, where composition would not mean anything.
+
+Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
+`x -> size(front(x))` — handy as a projection: `std::ranges::sort(words, {}, _.front().size())`.
 
 ### Application
 
@@ -101,7 +107,7 @@ using tacit::_;
 using namespace std::ranges;
 
 namespace bank {
-TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);  // type `teller` + object `it` + methods
+TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);
 }
 
 sort(accounts, {}, bank::it.balance());

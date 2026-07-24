@@ -117,6 +117,19 @@ constexpr bool is_blank_v = [] {
     return false;
 }();
 
+// The composable projection wrapper `fn` (defined in full below, after the vocabulary tables). The
+// forward declarations let the section machinery treat an `fn` argument as a *projected* blank, and
+// let the operator/section macros constrain against it.
+template <class> constexpr bool is_fn_v = false;
+template <class F> struct fn;
+template <class F> constexpr bool is_fn_v<fn<F>> = true;
+template <class T>
+concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
+
+// A "slot" the section fills from a supplied argument: a plain blank (`_`, identity) or an `fn` —
+// a *projected* blank, whose projection is applied to the fill before the call.
+template <class T> constexpr bool is_slot_v = is_blank_v<T> || is_fn_v<std::remove_cvref_t<T>>;
+
 // A partially-applied operation carrying its bound args and blank markers.
 // `invoke` performs the call once every argument is materialised; `bound` holds
 // each original argument (a value, or a placeholder standing for a blank).
@@ -127,42 +140,42 @@ template <class Invoke, class... Bound> struct section {
   std::tuple<Bound...> bound;
 
   static constexpr std::size_t arity = sizeof...(Bound);
-  static constexpr std::array<bool, arity> blank_at{is_blank_v<Bound>...};
-  static constexpr std::size_t blanks = [] {
+  static constexpr std::array<bool, arity> slot_at{is_slot_v<Bound>...};
+  static constexpr std::array<bool, arity> proj_at{is_fn_v<std::remove_cvref_t<Bound>>...};
+  static constexpr std::size_t slots = [] {
     std::size_t n = 0;
-    for (bool h : blank_at)
-      n += h;
+    for (bool s : slot_at)
+      n += s;
     return n;
   }();
-  static constexpr std::size_t blanks_before(std::size_t i) {
+  static constexpr std::size_t slots_before(std::size_t i) {
     std::size_t n = 0;
     for (std::size_t j = 0; j < i; ++j)
-      n += blank_at[j];
+      n += slot_at[j];
     return n;
   }
 
-  template <std::size_t I, class Fills>
-  constexpr decltype(auto) pick(Fills &&fills) const {
-    if constexpr (blank_at[I])
-      return std::forward_as_tuple(
-          std::get<blanks_before(I)>(std::forward<Fills>(fills)));
-    else
+  template <std::size_t I, class Fills> constexpr decltype(auto) pick(Fills &&fills) const {
+    if constexpr (proj_at[I]) // projected blank: apply the stored fn to the fill (materialised)
+      return std::make_tuple(
+          std::get<I>(bound)(std::get<slots_before(I)>(std::forward<Fills>(fills))));
+    else if constexpr (slot_at[I]) // plain blank: the fill, untouched
+      return std::forward_as_tuple(std::get<slots_before(I)>(std::forward<Fills>(fills)));
+    else // bound value
       return std::forward_as_tuple(std::get<I>(bound));
   }
 
   template <class X, class... F>
-    requires(sizeof...(F) == blanks)
+    requires(sizeof...(F) == slots)
   constexpr decltype(auto) operator()(X &&x, F &&...f) const {
     auto fills = std::forward_as_tuple(std::forward<F>(f)...);
-    return
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) -> decltype(auto) {
-          return std::apply(
-              [&](auto &&...args) -> decltype(auto) {
-                return invoke(std::forward<X>(x),
-                              std::forward<decltype(args)>(args)...);
-              },
-              std::tuple_cat(pick<Is>(fills)...));
-        }(std::make_index_sequence<arity>{});
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> decltype(auto) {
+      return std::apply(
+          [&](auto &&...args) -> decltype(auto) {
+            return invoke(std::forward<X>(x), std::forward<decltype(args)>(args)...);
+          },
+          std::tuple_cat(pick<Is>(fills)...));
+    }(std::make_index_sequence<arity>{});
   }
 };
 
@@ -171,53 +184,8 @@ template <class Invoke, class... A>
   return section<Invoke, std::decay_t<A>...>{invoke, {std::forward<A>(a)...}};
 }
 
-// clang-format off
-// A composable single-argument closure: wraps a projection F so its result keeps composing. Operator
-// sections, subscript, and application on it build a NEW fn via CTAD on the qualified template name
-// (`tacit::detail::fn{...}`) — so each step is fn<new-lambda>, not fn<F>; that self-wrapping trap is
-// what sank the first attempt. `_` yields one wherever it produces a single-argument closure. It is
-// deliberately NOT a blank (no is_tacit_placeholder), so placeholder detection never mistakes a
-// composed projection for a blank, and the multi-blank `section` path above is left untouched.
-template <class> constexpr bool is_fn_v = false;
-template <class F> struct fn;
-template <class F> constexpr bool is_fn_v<fn<F>> = true;
-template <class T> concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
-
-template <class F> struct fn {
-  F f;
-  template <class... A>
-    requires requires(F const &g, A &&...a) { g(std::forward<A>(a)...); }
-  constexpr decltype(auto) operator()(A &&...a) const { return f(std::forward<A>(a)...); }
-  template <class I> [[nodiscard]] constexpr auto operator[](I i) const {
-    return tacit::detail::fn{[g = *this, i = std::move(i)](auto &&x) -> decltype(auto) {
-      return g(std::forward<decltype(x)>(x))[i];
-    }};
-  }
-  // Operator sections as hidden friends — found by ADL, including across a module boundary
-  // (`import tacit;`): `g op value` / `value op g` compose to a unary fn; `g op h` is binary.
-#define TACIT_FN_OP(op)                                                                            \
-  template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
-    return tacit::detail::fn{                                                                      \
-        [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
-  }                                                                                                \
-  template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X x, fn g) {                 \
-    return tacit::detail::fn{                                                                      \
-        [g, x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};      \
-  }                                                                                                \
-  template <class G> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G> h) {              \
-    return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
-      return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
-    };                                                                                             \
-  }
-  TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
-  TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
-#undef TACIT_FN_OP
-};
-// clang-format on
-
 #if TACIT_HAS_REFLECTION
-            template <std::size_t N>
-            struct fixed_string {
+template <std::size_t N> struct fixed_string {
   char v[N]{};
   consteval fixed_string(char const (&s)[N]) { std::copy_n(s, N, v); }
   constexpr std::string_view view() const noexcept { return {v, N - 1}; }
@@ -235,7 +203,7 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 #define TACIT_MEMBER(NAME)                                                                         \
   template <class... A>                                                                            \
   [[nodiscard]] static constexpr auto NAME(A&&... a) {                                             \
-    if constexpr ((tacit::detail::is_blank_v<A> || ...))                                           \
+    if constexpr ((tacit::detail::is_slot_v<A> || ...))                                           \
       return tacit::detail::make_section(                                                          \
           [](auto&& x, auto&&... g) -> decltype(auto) {                                            \
             return std::forward<decltype(x)>(x).NAME(std::forward<decltype(g)>(g)...);             \
@@ -413,6 +381,65 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 #define TACIT_EXTRA_MEMBERS(X)
 #endif
 
+// clang-format off
+namespace detail {
+// The composable projection wrapper (forward-declared above). Beyond call, subscript, and the
+// operator sections, it carries the same std vocabulary as `_` — but every member COMPOSES through
+// the wrapped projection, so `_.front().size()` == `x -> size(front(x))`: that is member chaining.
+template <class F> struct fn {
+  F f;
+  template <class... A>
+    requires requires(F const &g, A &&...a) { g(std::forward<A>(a)...); }
+  constexpr decltype(auto) operator()(A &&...a) const { return f(std::forward<A>(a)...); }
+  template <class I> [[nodiscard]] constexpr auto operator[](I i) const {
+    return tacit::detail::fn{[g = *this, i = std::move(i)](auto &&x) -> decltype(auto) {
+      return g(std::forward<decltype(x)>(x))[i];
+    }};
+  }
+  // Operator sections as hidden friends — found by ADL, including across a module boundary
+  // (`import tacit;`): `g op value` / `value op g` compose to a unary fn; `g op h` is binary.
+#define TACIT_FN_OP(op)                                                                            \
+  template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
+    return tacit::detail::fn{                                                                      \
+        [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
+  }                                                                                                \
+  template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X x, fn g) {                 \
+    return tacit::detail::fn{                                                                      \
+        [g, x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};      \
+  }                                                                                                \
+  template <class G> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G> h) {              \
+    return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
+      return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
+    };                                                                                             \
+  }
+  TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
+  TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
+#undef TACIT_FN_OP
+  // Vocabulary — each name composes through the projection (member chaining). No-blank args only.
+#define TACIT_FN_MEMBER(NAME)                                                                      \
+  template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
+    return tacit::detail::fn{                                                                      \
+        [g = *this, ... a = std::forward<A>(a)]<class X>(X &&x) -> decltype(auto)                  \
+          requires requires(X &&xx, A &&...aa) {                                                   \
+            std::declval<fn const &>()(std::forward<X>(xx)).NAME(std::forward<A>(aa)...);          \
+          } { return g(std::forward<X>(x)).NAME(a...); }};                                         \
+  }                                                                                                \
+  static_assert(true)
+#define TACIT_FN_CPO1(NAME, CPO)                                                                   \
+  [[nodiscard]] constexpr auto NAME() const {                                                      \
+    return tacit::detail::fn{[g = *this]<class X>(X &&x) -> decltype(auto)                         \
+             requires requires(X &&xx) { CPO(std::declval<fn const &>()(std::forward<X>(xx))); }   \
+             { return CPO(g(std::forward<X>(x))); }};                                              \
+  }
+  TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
+  TACIT_EXTRA_MEMBERS(TACIT_FN_MEMBER)
+  TACIT_STD_CPOS1(TACIT_FN_CPO1)
+#undef TACIT_FN_MEMBER
+#undef TACIT_FN_CPO1
+};
+} // namespace detail
+// clang-format on
+
 // The default placeholder: the full std vocabulary (plus any
 // TACIT_EXTRA_MEMBERS) and the core.
 struct lieutenant {
@@ -433,36 +460,24 @@ inline constexpr lieutenant _;
 // `_`'s closures, e.g. transform_elements(t, _.size()) or any_of_element(t,
 // _.empty()).
 template <class Tup, class F> constexpr void for_each_element(Tup &&t, F &&f) {
-  std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); },
-             std::forward<Tup>(t));
+  std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); }, std::forward<Tup>(t));
 }
-template <class Tup, class F>
-[[nodiscard]] constexpr bool any_of_element(Tup &&t, F &&f) {
+template <class Tup, class F> [[nodiscard]] constexpr bool any_of_element(Tup &&t, F &&f) {
   return std::apply(
-      [&](auto &&...xs) {
-        return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) || ...);
-      },
+      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) || ...); },
       std::forward<Tup>(t));
 }
-template <class Tup, class F>
-[[nodiscard]] constexpr bool all_of_element(Tup &&t, F &&f) {
+template <class Tup, class F> [[nodiscard]] constexpr bool all_of_element(Tup &&t, F &&f) {
   return std::apply(
-      [&](auto &&...xs) {
-        return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) && ...);
-      },
+      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) && ...); },
       std::forward<Tup>(t));
 }
-template <class Tup, class F>
-[[nodiscard]] constexpr bool none_of_element(Tup &&t, F &&f) {
+template <class Tup, class F> [[nodiscard]] constexpr bool none_of_element(Tup &&t, F &&f) {
   return !tacit::any_of_element(std::forward<Tup>(t), std::forward<F>(f));
 }
-template <class Tup, class F>
-[[nodiscard]] constexpr auto transform_elements(Tup &&t, F &&f) {
-  return std::apply(
-      [&](auto &&...xs) {
-        return std::tuple{f(std::forward<decltype(xs)>(xs))...};
-      },
-      std::forward<Tup>(t));
+template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tup &&t, F &&f) {
+  return std::apply([&](auto &&...xs) { return std::tuple{f(std::forward<decltype(xs)>(xs))...}; },
+                    std::forward<Tup>(t));
 }
 
 } // namespace tacit

@@ -38,7 +38,7 @@ They are `_`-agnostic but pair naturally with `_`'s closures, e.g. `transform_el
 A `template for` (C++26, `__cpp_expansion_statements`) path can later extend them to arbitrary
 aggregates and reflection ranges behind a `TACIT_HAS_EXPANSION` flag — no API change.
 
-## Next: the hybrid (member chaining + projected blanks)
+## Hybrid: member chaining + projected blanks (implemented)
 
 Prototyping the items below (standalone, on g++ 13 / clang 18) showed that three of them are one
 change, not three. Today `_` (the `lieutenant`) and a composed projection (`detail::fn`) are separate
@@ -58,6 +58,13 @@ mean `λf. f(3)`. So the plan is the **hybrid**: keep `_` as the distinct entry 
 `_[i]`, and being the identity blank) and extend only its *results* — `fn` gains the vocabulary and
 projected-blank-ness. That is an extension of v0.2's `fn`, not a rewrite. Decided: **yes to member
 chaining** — each `fn<F>` carries the ~60 vocabulary members (declared once, instantiated on use).
+
+**Cost of `fn` carrying the vocabulary.** It is a *compile-time* cost, not runtime or binary size.
+The ~60 names are member templates / non-template members of a class template, so they are
+instantiated only when used — an unused member emits no code. Measured: a TU that uses `_` but no
+chaining produces a byte-identical object file to pre-hybrid v0.2 (16240 bytes either way), and
+front-end compile time rose ~4% (~40 ms) on a real TU, negligible for parsing the header alone. At
+runtime the composed closures inline away — no dispatch, no allocation.
 
 ## Still on the table
 
