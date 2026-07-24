@@ -232,7 +232,10 @@ ctest --test-dir build --output-on-failure
 `tacit` names the paradigm (point-free / tacit programming). The type of `_` is `tacit::lieutenant` —
 French *lieu tenant*, literally "place-holder," a stand-in — which is exactly what `_` is, while
 sidestepping the loaded English word "placeholder" (already spoken for by `std::placeholders` and by
-the grammar term *placeholder type specifier* for `auto`).
+the grammar term *placeholder type specifier* for `auto`); the irony is not lost entirely that
+point-free style almost necessarily involves more points in the literal sense (periods/dots),
+whether through composition syntax like `f . g` in Haskell or member access function objects for
+partial application like `_.m(...)` here.
 
 ## License
 
