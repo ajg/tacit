@@ -465,7 +465,7 @@ struct lieutenant {
   TACIT_CORE(lieutenant);
 };
 
-struct _ {}; // type-level hole; the value `_` (next) hides it in ordinary lookup, so reach the
+struct _ {}; // type-level blank; the value `_` (next) hides it in ordinary lookup, so reach the
              // type via the elaborated `struct _`.
 inline constexpr lieutenant _;
 
@@ -493,8 +493,8 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
-// Type-level tacit: `_` doubles as a type-level hole for partially applying a class template into a
-// metafunction. A template argument list can't hold the *value* `_`, so the hole is written with
+// Type-level tacit: `_` doubles as a type-level blank for partially applying a class template into a
+// metafunction. A template argument list can't hold the *value* `_`, so the blank is written with
 // the elaborated-type-specifier `struct _` — the tag-namespace twin of the value (the old C trick
 // where a class and a variable share a name). Fixed arguments then stay plain types, no wrapper:
 //
@@ -502,15 +502,15 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 //   bind<std::map, int, struct _>::with<double>         // std::map<int, double>   (partial)
 //   bind<std::map, struct _, struct _>::with<char, int> // std::map<char, int>
 namespace detail {
-typedef struct _ hole; // handle on the hole type
-// Walk the argument list, replacing each `struct _` hole with the next of Xs...; keep fixed types.
+typedef struct _ blank; // handle on the blank type
+// Walk the argument list, replacing each `struct _` blank with the next of Xs...; keep fixed types.
 template <template <class...> class F, class Done, class Xs, class... Args> struct fill_slots;
 template <template <class...> class F, class... D, class Xs>
 struct fill_slots<F, std::tuple<D...>, Xs> {
   using type = F<D...>;
 };
 template <template <class...> class F, class... D, class X, class... Xr, class... A>
-struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, hole, A...>
+struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, blank, A...>
     : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
 template <template <class...> class F, class... D, class Xs, class A0, class... A>
 struct fill_slots<F, std::tuple<D...>, Xs, A0, A...>

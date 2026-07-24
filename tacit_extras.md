@@ -71,7 +71,7 @@ runtime the composed closures inline away — no dispatch, no allocation.
 
 The default surface is `_` plus the opt-in type-level `bind`, and it earns the "one symbol" promise on
 *scope*: `using tacit::_;` brings in only `_`; the operator forms (sections, `|`) arrive via ADL as
-hidden friends of `fn`; and the type-level hole reuses `_` as `struct _`, adding no new name. `bind` is
+hidden friends of `fn`; and the type-level blank reuses `_` as `struct _`, adding no new name. `bind` is
 the sole extra qualified name, and it's inert unless you write it.
 
 The free-function combinators (`fanout`, `first`, `second`, the `*_element` family) are different in
@@ -98,7 +98,7 @@ overloads plus the runtime path, offered as an opt-in generator (`TACIT_TMEMBER`
 
 **Type-level tacit** *(implemented)* — `bind<F, args...>::with<Xs...>` partially applies a class
 template. `_` reuses its own identifier at the type level via the elaborated `struct _` (an old C
-trick: a class and a variable can share a name), so the hole is `struct _` and fixed args stay plain
+trick: a class and a variable can share a name), so the blank is `struct _` and fixed args stay plain
 types — `bind<std::map, int, struct _>::with<double>` == `std::map<int, double>`. A P2996 build can
 generalize substitution to alias templates / non-type params via `std::meta::substitute` (gated hook).
 
