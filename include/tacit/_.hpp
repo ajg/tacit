@@ -193,26 +193,26 @@ template <class F> struct fn {
       return g(std::forward<decltype(x)>(x))[i];
     }};
   }
-};
-
-// Sections on fn: `g op value` / `value op g` compose (unary); `g op h` mirrors `_ op _` (binary).
+  // Operator sections as hidden friends — found by ADL, including across a module boundary
+  // (`import tacit;`): `g op value` / `value op g` compose to a unary fn; `g op h` is binary.
 #define TACIT_FN_OP(op)                                                                            \
-  template <class F, not_fn Y> [[nodiscard]] constexpr auto operator op(fn<F> g, Y y) {            \
+  template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
     return tacit::detail::fn{                                                                      \
         [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
   }                                                                                                \
-  template <not_fn X, class F> [[nodiscard]] constexpr auto operator op(X x, fn<F> g) {            \
+  template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X x, fn g) {                 \
     return tacit::detail::fn{                                                                      \
         [g, x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};      \
   }                                                                                                \
-  template <class F, class G> [[nodiscard]] constexpr auto operator op(fn<F> g, fn<G> h) {         \
+  template <class G> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G> h) {              \
     return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
       return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
     };                                                                                             \
   }
-TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
-TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
+  TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
+  TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
 #undef TACIT_FN_OP
+};
 // clang-format on
 
 #if TACIT_HAS_REFLECTION

@@ -151,6 +151,21 @@ also provides, for names not in a table:
 These are compiled out otherwise. `TACIT_HAS_REFLECTION` (the one macro kept on the clean include
 path) lets you `#if` on whether they exist.
 
+## Modules
+
+`import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
+and re-exports `_` and the tuple combinators:
+
+```cpp
+import tacit;
+using tacit::_;
+```
+
+Macros don't cross a module boundary, so the derive generators (`TACIT_LIEUTENANT`, `TACIT_CORE`, …)
+stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to derive your own
+(just as `import std;` exports no macros). Verified on clang; GCC's `-fmodules-ts` isn't reliable for
+this pattern yet, so prefer `#include` there.
+
 ## Build & test
 
 Header-only — just add `include/` to your include path, or use CMake:

@@ -17,3 +17,13 @@ jobs:
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  modules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run `import tacit;` (clang)
+        run: |
+          clang++-18 -std=c++23 -Iinclude --precompile tacit.cppm -o tacit.pcm
+          clang++-18 -std=c++23 -Iinclude -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
+          ./module_check
