@@ -190,13 +190,13 @@ prefer `#include` there.
 
 ## Type-level `_`
 
-`_` doubles as a *type-level* hole for partially applying a class template. Because a template
-argument list can't hold the value `_`, the hole is written `struct _` (its tag-namespace twin), so
+`_` doubles as a *type-level* blank for partially applying a class template. Because a template
+argument list can't hold the value `_`, the blank is written `struct _` (its tag-namespace twin), so
 fixed arguments stay plain types:
 
 ```cpp
-tacit::bind<std::vector, struct _>::with<int>          // std::vector<int>
-tacit::bind<std::map, int, struct _>::with<double>     // std::map<int, double>   (partial)
+tacit::bind<std::vector, struct _>::with<int>       // std::vector<int>
+tacit::bind<std::map, int, struct _>::with<double>  // std::map<int, double>
 ```
 
 ## Build & test
