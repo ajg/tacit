@@ -59,6 +59,21 @@ lambda the moment you need to reorder or reuse an argument.
 The comparison and arithmetic operators are finite and lexical: `_ == y`, `x + _`, `_ + _` all build
 the obvious closure.
 
+### Composition
+
+The closure `_` hands back is itself composable, so a projection and a section chain without ever
+naming a lambda — sections, subscript (`_[i]`), and arithmetic all build a new closure:
+
+```cpp
+std::ranges::count_if(v, _.size() >= 2);     // size(x) >= 2
+std::ranges::sort(v, _.size() < _.size());   // order by size
+auto scaled = (_ + 1) * 2;                   // x -> (x + 1) * 2
+auto head   = _[0];                          // x -> x[0]
+```
+
+Every single-argument closure `_` produces is a small composable `fn`; the multi-blank forms
+(`_.foo(_)`, `_ < _`) stay partial applications, where composition would not mean anything.
+
 ### Application
 
 There's a third way to apply. Where `_.size()` applies a *named member* and `_ == y` applies an

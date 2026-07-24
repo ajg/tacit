@@ -1,65 +1,81 @@
 // SPDX-License-Identifier: BSL-1.0
 #pragma once
 // ============================================================================================
-//  _.hpp  —  a point-free "_" object with a first-class standard-library vocabulary, and a
+//  _.hpp  —  a point-free "_" object with a first-class standard-library
+//  vocabulary, and a
 //            reusable core for deriving your own domain-specific placeholders
 // ============================================================================================
 //
-//  `_` (of type `tacit::lieutenant`) is a stateless global object whose members return closures
-//  that forward to a same-named operation on whatever they are later applied to:
+//  `_` (of type `tacit::lieutenant`) is a stateless global object whose members
+//  return closures that forward to a same-named operation on whatever they are
+//  later applied to:
 //
 //      _.size()        ==  [](auto&& x){ return std::ranges::size(x); }
 //      _.push_back(y)  ==  [y](auto&& x){ return x.push_back(y); }
 //      (_ == y)        ==  [y](auto&& x){ return x == y; }
 //
-//  BLANKS (partial application).  Each `_` token is one blank; the arity of the closure is the
-//  number of blanks; blanks are filled left to right. The receiver counts:
+//  BLANKS (partial application).  Each `_` token is one blank; the arity of the
+//  closure is the number of blanks; blanks are filled left to right. The
+//  receiver counts:
 //
 //      _.push_back(y)   -> 1 blank  (c)             c.push_back(y)
 //      _.push_back(_)   -> 2 blanks (c, v)          c.push_back(v)
 //      _.replace(_, _)  -> 3 blanks (c, a, b)       c.replace(a, b)
 //      _ + _            -> 2 blanks (a, b)          a + b
 //
-//  Bound (non-`_`) arguments are stored by value; the receiver and blank-fills are perfect-
-//  forwarded. Repeated `_` are DISTINCT blanks (there are no positional `_1`/`_2` sigils — reach
-//  for a named lambda the moment you need to reorder or reuse an argument).
+//  Bound (non-`_`) arguments are stored by value; the receiver and blank-fills
+//  are perfect- forwarded. Repeated `_` are DISTINCT blanks (there are no
+//  positional `_1`/`_2` sigils — reach for a named lambda the moment you need
+//  to reorder or reuse an argument).
 //
-//  DERIVE YOUR OWN.  The vocabulary-independent machinery (operator sections, application, the
-//  reflective hatch) lives in TACIT_CORE(Self). The shortest way to make a placeholder is
-//  TACIT_LIEUTENANT, which declares the type and its object in one statement:
+//  DERIVE YOUR OWN.  The vocabulary-independent machinery (operator sections,
+//  application, the reflective hatch) lives in TACIT_CORE(Self). The shortest
+//  way to make a placeholder is TACIT_LIEUTENANT, which declares the type and
+//  its object in one statement:
 //
 //      #define TACIT_KEEP_MACROS
 //      #include <tacit/_.hpp>
 //      namespace bank {
-//        TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);   // type + object + your methods
+//        TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);   // type +
+//        object + your methods
 //      }
-//      // now:  ranges::sort(accounts, {}, bank::it.balance());   bank::it.deposit(_)(acct, 100);
+//      // now:  ranges::sort(accounts, {}, bank::it.balance());
+//      bank::it.deposit(_)(acct, 100);
 //
-//  Or write the struct yourself — one member per line, then the core (each line semicolon-clean):
+//  Or write the struct yourself — one member per line, then the core (each line
+//  semicolon-clean):
 //
 //      struct teller {
-//        TACIT_MEMBER(deposit);              // one name per line (or TACIT_MEMBERS(a, b, c); )
-//        TACIT_MEMBER(balance);
-//        TACIT_STD_MEMBERS(TACIT_MEMBER)     // and/or pull the whole std vocabulary (bulk, no ;)
-//        TACIT_CORE(teller);
+//        TACIT_MEMBER(deposit);              // one name per line (or
+//        TACIT_MEMBERS(a, b, c); ) TACIT_MEMBER(balance);
+//        TACIT_STD_MEMBERS(TACIT_MEMBER)     // and/or pull the whole std
+//        vocabulary (bulk, no ;) TACIT_CORE(teller);
 //      };
 //
-//  These need the generator macros, undefined by default (so a plain include exports only `_`);
-//  `#define TACIT_KEEP_MACROS` before including to keep them. To instead add names to the built-in
-//  `_`, pre-#define TACIT_EXTRA_MEMBERS(X) (no TACIT_KEEP_MACROS needed) — see below.
+//  These need the generator macros, undefined by default (so a plain include
+//  exports only `_`);
+//  `#define TACIT_KEEP_MACROS` before including to keep them. To instead add
+//  names to the built-in
+//  `_`, pre-#define TACIT_EXTRA_MEMBERS(X) (no TACIT_KEEP_MACROS needed) — see
+//  below.
 //
 //  THREE LAYERS
-//    1. First-class vocabulary — generated from the curated tables (or your own). Pure C++23
+//    1. First-class vocabulary — generated from the curated tables (or your
+//    own). Pure C++23
 //       (builds on g++ 13 and clang 18, -std=c++23).
 //    2. Operator sections — `_ == y`, `x + _`, `_ + _`. Finite and lexical.
-//    3. Reflective hatch — `_.m<"custom">(a...)`, `_.field<"x">()`, `_.enum_name()` for names not
+//    3. Reflective hatch — `_.m<"custom">(a...)`, `_.field<"x">()`,
+//    `_.enum_name()` for names not
 //       in a table. C++26 (P2996); auto-detected, otherwise compiled out.
 //
-//  RANGE ACCESS goes through the customization points (`std::ranges::NAME(x)`, not `x.NAME()`), so
-//  `_.size()` / `_.begin()` also work on C arrays, string views, and third-party ranges.
+//  RANGE ACCESS goes through the customization points (`std::ranges::NAME(x)`,
+//  not `x.NAME()`), so
+//  `_.size()` / `_.begin()` also work on C arrays, string views, and
+//  third-party ranges.
 //
-//  ON THE NAME.  "tacit" is point-free programming; "lieutenant" is French "lieu tenant" —
-//  literally "place-holding" — sidestepping the loaded English "placeholder".
+//  ON THE NAME.  "tacit" is point-free programming; "lieutenant" is French
+//  "lieu tenant" — literally "place-holding" — sidestepping the loaded English
+//  "placeholder".
 // ============================================================================================
 
 #include <array>
@@ -70,9 +86,10 @@
 #include <type_traits>
 #include <utility>
 
-// Detect reflection (P2996). `__cpp_impl_reflection` is the language facility (the `^^` operator
-// and `[: :]` splicers); `__cpp_lib_reflection` is the <meta> library. Define TACIT_HAS_REFLECTION
-// yourself before including to force it (e.g. on the clang-p2996 fork behind -freflection-latest).
+// Detect reflection (P2996). `__cpp_impl_reflection` is the language facility
+// (the `^^` operator and `[: :]` splicers); `__cpp_lib_reflection` is the
+// <meta> library. Define TACIT_HAS_REFLECTION yourself before including to
+// force it (e.g. on the clang-p2996 fork behind -freflection-latest).
 #ifndef TACIT_HAS_REFLECTION
 #if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
 #define TACIT_HAS_REFLECTION 1
@@ -89,8 +106,9 @@
 namespace tacit {
 namespace detail {
 
-// A blank is any tacit placeholder in argument position — detected via the `is_tacit_placeholder`
-// tag that TACIT_CORE injects, so blanks work for the default `_` and for any derived placeholder.
+// A blank is any tacit placeholder in argument position — detected via the
+// `is_tacit_placeholder` tag that TACIT_CORE injects, so blanks work for the
+// default `_` and for any derived placeholder.
 template <class T>
 constexpr bool is_blank_v = [] {
   if constexpr (requires { std::remove_cvref_t<T>::is_tacit_placeholder; })
@@ -99,10 +117,11 @@ constexpr bool is_blank_v = [] {
     return false;
 }();
 
-// A partially-applied operation carrying its bound args and blank markers. `invoke` performs the
-// call once every argument is materialised; `bound` holds each original argument (a value, or a
-// placeholder standing for a blank). Applying it to (subject, fills...) splices the fills into the
-// blank positions, left to right, and calls `invoke`.
+// A partially-applied operation carrying its bound args and blank markers.
+// `invoke` performs the call once every argument is materialised; `bound` holds
+// each original argument (a value, or a placeholder standing for a blank).
+// Applying it to (subject, fills...) splices the fills into the blank
+// positions, left to right, and calls `invoke`.
 template <class Invoke, class... Bound> struct section {
   Invoke invoke;
   std::tuple<Bound...> bound;
@@ -122,9 +141,11 @@ template <class Invoke, class... Bound> struct section {
     return n;
   }
 
-  template <std::size_t I, class Fills> constexpr decltype(auto) pick(Fills &&fills) const {
+  template <std::size_t I, class Fills>
+  constexpr decltype(auto) pick(Fills &&fills) const {
     if constexpr (blank_at[I])
-      return std::forward_as_tuple(std::get<blanks_before(I)>(std::forward<Fills>(fills)));
+      return std::forward_as_tuple(
+          std::get<blanks_before(I)>(std::forward<Fills>(fills)));
     else
       return std::forward_as_tuple(std::get<I>(bound));
   }
@@ -133,13 +154,15 @@ template <class Invoke, class... Bound> struct section {
     requires(sizeof...(F) == blanks)
   constexpr decltype(auto) operator()(X &&x, F &&...f) const {
     auto fills = std::forward_as_tuple(std::forward<F>(f)...);
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> decltype(auto) {
-      return std::apply(
-          [&](auto &&...args) -> decltype(auto) {
-            return invoke(std::forward<X>(x), std::forward<decltype(args)>(args)...);
-          },
-          std::tuple_cat(pick<Is>(fills)...));
-    }(std::make_index_sequence<arity>{});
+    return
+        [&]<std::size_t... Is>(std::index_sequence<Is...>) -> decltype(auto) {
+          return std::apply(
+              [&](auto &&...args) -> decltype(auto) {
+                return invoke(std::forward<X>(x),
+                              std::forward<decltype(args)>(args)...);
+              },
+              std::tuple_cat(pick<Is>(fills)...));
+        }(std::make_index_sequence<arity>{});
   }
 };
 
@@ -148,8 +171,53 @@ template <class Invoke, class... A>
   return section<Invoke, std::decay_t<A>...>{invoke, {std::forward<A>(a)...}};
 }
 
+// clang-format off
+// A composable single-argument closure: wraps a projection F so its result keeps composing. Operator
+// sections, subscript, and application on it build a NEW fn via CTAD on the qualified template name
+// (`tacit::detail::fn{...}`) — so each step is fn<new-lambda>, not fn<F>; that self-wrapping trap is
+// what sank the first attempt. `_` yields one wherever it produces a single-argument closure. It is
+// deliberately NOT a blank (no is_tacit_placeholder), so placeholder detection never mistakes a
+// composed projection for a blank, and the multi-blank `section` path above is left untouched.
+template <class> constexpr bool is_fn_v = false;
+template <class F> struct fn;
+template <class F> constexpr bool is_fn_v<fn<F>> = true;
+template <class T> concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
+
+template <class F> struct fn {
+  F f;
+  template <class... A>
+    requires requires(F const &g, A &&...a) { g(std::forward<A>(a)...); }
+  constexpr decltype(auto) operator()(A &&...a) const { return f(std::forward<A>(a)...); }
+  template <class I> [[nodiscard]] constexpr auto operator[](I i) const {
+    return tacit::detail::fn{[g = *this, i = std::move(i)](auto &&x) -> decltype(auto) {
+      return g(std::forward<decltype(x)>(x))[i];
+    }};
+  }
+};
+
+// Sections on fn: `g op value` / `value op g` compose (unary); `g op h` mirrors `_ op _` (binary).
+#define TACIT_FN_OP(op)                                                                            \
+  template <class F, not_fn Y> [[nodiscard]] constexpr auto operator op(fn<F> g, Y y) {            \
+    return tacit::detail::fn{                                                                      \
+        [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
+  }                                                                                                \
+  template <not_fn X, class F> [[nodiscard]] constexpr auto operator op(X x, fn<F> g) {            \
+    return tacit::detail::fn{                                                                      \
+        [g, x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};      \
+  }                                                                                                \
+  template <class F, class G> [[nodiscard]] constexpr auto operator op(fn<F> g, fn<G> h) {         \
+    return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
+      return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
+    };                                                                                             \
+  }
+TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
+TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
+#undef TACIT_FN_OP
+// clang-format on
+
 #if TACIT_HAS_REFLECTION
-template <std::size_t N> struct fixed_string {
+            template <std::size_t N>
+            struct fixed_string {
   char v[N]{};
   consteval fixed_string(char const (&s)[N]) { std::copy_n(s, N, v); }
   constexpr std::string_view view() const noexcept { return {v, N - 1}; }
@@ -174,10 +242,10 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
           },                                                                                       \
           std::forward<A>(a)...);                                                                  \
     else                                                                                           \
-      return [... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                        \
+      return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)      \
                requires requires(X&& xx, A&&... aa) {                                              \
                  std::forward<X>(xx).NAME(std::forward<A>(aa)...);                                 \
-               } { return std::forward<X>(x).NAME(a...); };                                        \
+               } { return std::forward<X>(x).NAME(a...); }};                                       \
   }                                                                                                \
   static_assert(true)
 
@@ -202,8 +270,8 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //  Unary / binary customization-point forwarders (route through std::ranges niebloids).
 #define TACIT_CPO1(NAME, CPO)                                                                      \
   [[nodiscard]] static constexpr auto NAME() {                                                     \
-    return []<class X>(X&& x) -> decltype(auto)                                                    \
-             requires requires(X&& xx) { CPO(xx); } { return CPO(x); };                            \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
+             requires requires(X&& xx) { CPO(xx); } { return CPO(x); }};                           \
   }
 #define TACIT_CPO2(NAME, CPO)                                                                      \
   [[nodiscard]] static constexpr auto NAME() {                                                     \
@@ -215,13 +283,13 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 
 //  One operator section (both one-sided forms and the two-blank form). Uses the enclosing `self`.
 #define TACIT_SECTION(op)                                                                          \
-  template <class Y> [[nodiscard]] friend constexpr auto operator op(self, Y&& y) {                \
-    return [y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                                    \
-             { return std::forward<decltype(x)>(x) op y; };                                        \
+  template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator op(self, Y&& y) { \
+    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                  \
+             { return std::forward<decltype(x)>(x) op y; }};                                       \
   }                                                                                                \
-  template <class X> [[nodiscard]] friend constexpr auto operator op(X&& x, self) {                \
-    return [x = std::forward<X>(x)](auto&& y) -> decltype(auto)                                    \
-             { return x op std::forward<decltype(y)>(y); };                                        \
+  template <class X> requires tacit::detail::not_fn<X> [[nodiscard]] friend constexpr auto operator op(X&& x, self) { \
+    return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                  \
+             { return x op std::forward<decltype(y)>(y); }};                                       \
   }                                                                                                \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                    \
     return [](auto&& x, auto&& y) -> decltype(auto)                                                \
@@ -305,6 +373,11 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
       return std::forward<decltype(x)>(x).template get<I>();                                       \
     };                                                                                             \
   }                                                                                                \
+  template <class I>                                                                               \
+  [[nodiscard]] constexpr auto operator[](I&& i) const {                                           \
+    return tacit::detail::fn{[i = std::forward<I>(i)](auto&& x) -> decltype(auto)                  \
+             { return std::forward<decltype(x)>(x)[i]; }};                                         \
+  }                                                                                                \
   TACIT_REFLECT(Self)                                                                              \
   static_assert(true)
 
@@ -332,14 +405,16 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   X(empty,  std::ranges::empty)  X(data,  std::ranges::data)
 // clang-format on
 
-// Additive extension hook for the default `_`: pre-#define this before including to add your own
-// first-class names (semicolon-separated, like the table above), e.g.
+// Additive extension hook for the default `_`: pre-#define this before
+// including to add your own first-class names (semicolon-separated, like the
+// table above), e.g.
 //   #define TACIT_EXTRA_MEMBERS(X) X(area); X(perimeter);
 #ifndef TACIT_EXTRA_MEMBERS
 #define TACIT_EXTRA_MEMBERS(X)
 #endif
 
-// The default placeholder: the full std vocabulary (plus any TACIT_EXTRA_MEMBERS) and the core.
+// The default placeholder: the full std vocabulary (plus any
+// TACIT_EXTRA_MEMBERS) and the core.
 struct lieutenant {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
   TACIT_EXTRA_MEMBERS(TACIT_MEMBER)
@@ -351,51 +426,66 @@ struct lieutenant {
 inline constexpr lieutenant _;
 
 // ------------------------------------------------------------------------------------------------
-// Heterogeneous element combinators: drive a callable over the elements of a tuple-like. Built on
-// std::apply + fold-expressions (C++23); a `template for` (C++26) path can later extend them to
-// arbitrary aggregates and reflection ranges. They are `_`-agnostic (any callable works) but pair
-// naturally with `_`'s closures, e.g. transform_elements(t, _.size()) or any_of_element(t,
+// Heterogeneous element combinators: drive a callable over the elements of a
+// tuple-like. Built on std::apply + fold-expressions (C++23); a `template for`
+// (C++26) path can later extend them to arbitrary aggregates and reflection
+// ranges. They are `_`-agnostic (any callable works) but pair naturally with
+// `_`'s closures, e.g. transform_elements(t, _.size()) or any_of_element(t,
 // _.empty()).
 template <class Tup, class F> constexpr void for_each_element(Tup &&t, F &&f) {
-  std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); }, std::forward<Tup>(t));
+  std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); },
+             std::forward<Tup>(t));
 }
-template <class Tup, class F> [[nodiscard]] constexpr bool any_of_element(Tup &&t, F &&f) {
+template <class Tup, class F>
+[[nodiscard]] constexpr bool any_of_element(Tup &&t, F &&f) {
   return std::apply(
-      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) || ...); },
+      [&](auto &&...xs) {
+        return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) || ...);
+      },
       std::forward<Tup>(t));
 }
-template <class Tup, class F> [[nodiscard]] constexpr bool all_of_element(Tup &&t, F &&f) {
+template <class Tup, class F>
+[[nodiscard]] constexpr bool all_of_element(Tup &&t, F &&f) {
   return std::apply(
-      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) && ...); },
+      [&](auto &&...xs) {
+        return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) && ...);
+      },
       std::forward<Tup>(t));
 }
-template <class Tup, class F> [[nodiscard]] constexpr bool none_of_element(Tup &&t, F &&f) {
+template <class Tup, class F>
+[[nodiscard]] constexpr bool none_of_element(Tup &&t, F &&f) {
   return !tacit::any_of_element(std::forward<Tup>(t), std::forward<F>(f));
 }
-template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tup &&t, F &&f) {
-  return std::apply([&](auto &&...xs) { return std::tuple{f(std::forward<decltype(xs)>(xs))...}; },
-                    std::forward<Tup>(t));
+template <class Tup, class F>
+[[nodiscard]] constexpr auto transform_elements(Tup &&t, F &&f) {
+  return std::apply(
+      [&](auto &&...xs) {
+        return std::tuple{f(std::forward<decltype(xs)>(xs))...};
+      },
+      std::forward<Tup>(t));
 }
 
 } // namespace tacit
 
-// Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>` alone suffices (no
-// `using tacit::_;`). Off by default — a header must not force a global `_` on every includer
-// (gettext's `#define _`, C++26's placeholder `_`, ...). Define it in your own build if you want
-// it.
+// Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>`
+// alone suffices (no `using tacit::_;`). Off by default — a header must not
+// force a global `_` on every includer (gettext's `#define _`, C++26's
+// placeholder `_`, ...). Define it in your own build if you want it.
 #ifdef TACIT_USING_UNDERSCORE
 using tacit::_;
 #endif
 
-// The default path exports exactly one name, `tacit::_`; a single `using tacit::_;` (or the opt-in
-// above) is all a caller needs — the vocabulary is reached through the object and the operator
-// sections are hidden friends found by ADL. To keep that promise the generator macros are undefined
-// below. To derive your own placeholder, `#define TACIT_KEEP_MACROS` before including; the
-// TACIT_MEMBER / TACIT_CORE / TACIT_STD_MEMBERS macros then stay available.
+// The default path exports exactly one name, `tacit::_`; a single `using
+// tacit::_;` (or the opt-in above) is all a caller needs — the vocabulary is
+// reached through the object and the operator sections are hidden friends found
+// by ADL. To keep that promise the generator macros are undefined below. To
+// derive your own placeholder, `#define TACIT_KEEP_MACROS` before including;
+// the TACIT_MEMBER / TACIT_CORE / TACIT_STD_MEMBERS macros then stay available.
 //
-// One macro is kept on the clean path: `TACIT_HAS_REFLECTION`, a feature flag (not a generator), so
-// you can `#if` on whether the reflective members (m / field / enum_name / each_field) exist;
-// testing that yourself would otherwise mean re-deriving tacit's `__cpp_*` condition.
+// One macro is kept on the clean path: `TACIT_HAS_REFLECTION`, a feature flag
+// (not a generator), so you can `#if` on whether the reflective members (m /
+// field / enum_name / each_field) exist; testing that yourself would otherwise
+// mean re-deriving tacit's `__cpp_*` condition.
 #ifndef TACIT_KEEP_MACROS
 #undef TACIT_MEMBER
 #undef TACIT_CPO1
