@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: BSL-1.0
 #pragma once
+
+// Version as a comparable integer: MAJOR*10000 + MINOR*100 + PATCH. A clean-path macro (kept), so
+// downstream code can `#if TACIT_VERSION >= 200` feature-test.
+#define TACIT_VERSION_MAJOR 0
+#define TACIT_VERSION_MINOR 2
+#define TACIT_VERSION_PATCH 0
+#define TACIT_VERSION                                                                              \
+  (TACIT_VERSION_MAJOR * 10000 + TACIT_VERSION_MINOR * 100 + TACIT_VERSION_PATCH)
 // ============================================================================================
 //  _.hpp  —  a point-free "_" object with a first-class standard-library
 //  vocabulary, and a
@@ -415,6 +423,13 @@ template <class F> struct fn {
   TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
   TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
 #undef TACIT_FN_OP
+  // Left-to-right composition: `f | g` == x -> g(f(x)); g is any callable (incl. another fn), and the
+  // result is itself an fn so pipelines keep composing. No clash with the ranges pipe, whose left
+  // operand is a range, not an fn.
+  template <class G> [[nodiscard]] friend constexpr auto operator|(fn f, G g) {
+    return tacit::detail::fn{
+        [f, g](auto &&x) -> decltype(auto) { return g(f(std::forward<decltype(x)>(x))); }};
+  }
   // Vocabulary — each name composes through the projection (member chaining). No-blank args only.
 #define TACIT_FN_MEMBER(NAME)                                                                      \
   template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
@@ -450,9 +465,63 @@ struct lieutenant {
   TACIT_CORE(lieutenant);
 };
 
+struct _ {}; // type-level hole; the value `_` (next) hides it in ordinary lookup, so reach the
+             // type via the elaborated `struct _`.
 inline constexpr lieutenant _;
 
+// Closure combinators (Haskell arrow flavour). `_`-agnostic — any callable works — and each returns
+// an fn, so results keep composing (member access, operator sections, `|`, ...).
+//   f | g              left-to-right compose  (operator on fn, above)
+//   fanout(f, g, ...)  x -> tuple{f(x), g(x), ...}         (Haskell &&&)
+//   first(f) / second(f)   transform one component of a pair   (Haskell first / second)
+template <class... Fs> [[nodiscard]] constexpr auto fanout(Fs... fs) {
+  return detail::fn{[fs...](auto &&x) { return std::tuple{fs(x)...}; }};
+}
+template <class F> [[nodiscard]] constexpr auto first(F f) {
+  return detail::fn{[f](auto &&p) { return std::pair{f(std::get<0>(p)), std::get<1>(p)}; }};
+}
+template <class F> [[nodiscard]] constexpr auto second(F f) {
+  return detail::fn{[f](auto &&p) { return std::pair{std::get<0>(p), f(std::get<1>(p))}; }};
+}
+
 // ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// Type-level tacit: `_` doubles as a type-level hole for partially applying a class template into a
+// metafunction. A template argument list can't hold the *value* `_`, so the hole is written with
+// the elaborated-type-specifier `struct _` — the tag-namespace twin of the value (the old C trick
+// where a class and a variable share a name). Fixed arguments then stay plain types, no wrapper:
+//
+//   bind<std::vector, struct _>::with<int>              // std::vector<int>
+//   bind<std::map, int, struct _>::with<double>         // std::map<int, double>   (partial)
+//   bind<std::map, struct _, struct _>::with<char, int> // std::map<char, int>
+namespace detail {
+typedef struct _ hole; // handle on the hole type
+// Walk the argument list, replacing each `struct _` hole with the next of Xs...; keep fixed types.
+template <template <class...> class F, class Done, class Xs, class... Args> struct fill_slots;
+template <template <class...> class F, class... D, class Xs>
+struct fill_slots<F, std::tuple<D...>, Xs> {
+  using type = F<D...>;
+};
+template <template <class...> class F, class... D, class X, class... Xr, class... A>
+struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, hole, A...>
+    : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
+template <template <class...> class F, class... D, class Xs, class A0, class... A>
+struct fill_slots<F, std::tuple<D...>, Xs, A0, A...>
+    : fill_slots<F, std::tuple<D..., A0>, Xs, A...> {};
+} // namespace detail
+
+template <template <class...> class F, class... Args> struct bind {
+  template <class... Xs>
+  using with = typename detail::fill_slots<F, std::tuple<>, std::tuple<Xs...>, Args...>::type;
+};
+
+#if TACIT_HAS_REFLECTION
+// C++26 extension point: with a P2996 toolchain, std::meta::substitute generalizes this to alias
+// templates and non-type template parameters that a template-template parameter cannot name. Left a
+// documented hook rather than shipped blind — untested reflection metaprograms want a real
+// toolchain, same posture as the reflective member hatch.
+#endif
+
 // Heterogeneous element combinators: drive a callable over the elements of a
 // tuple-like. Built on std::apply + fold-expressions (C++23); a `template for`
 // (C++26) path can later extend them to arbitrary aggregates and reflection

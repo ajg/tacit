@@ -68,16 +68,22 @@ runtime the composed closures inline away — no dispatch, no allocation.
 
 ## Still on the table
 
-**Explicit compose combinator** — `g | h` for chaining two *pre-built* named closures
-(`auto f = _.trim(); f | _.size()`); inline member chaining covers the common case. `operator|`
-constrained to `fn | fn` does not collide with the ranges pipe (`range | adaptor`).
+**Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`),
+plus `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` / `tacit::second`. Each returns an
+`fn`, so results keep composing; `operator|` does not collide with the ranges pipe (its left operand
+is a range, not an `fn`). `f *** g` is just `first(f) | second(g)`.
 
 **Template-argument members** — `_.get<0>()`, `_.as<int>()`. After the hybrid these go into the
 *shared* vocabulary, so they would work on `_` and every projection at once. A template parameter pack
 is single-kind, so one macro cannot take both `foo<int>` (type) and `foo<0>` (value) — it needs two
 overloads plus the runtime path, offered as an opt-in generator (`TACIT_TMEMBER` / `TACIT_VMEMBER`).
 
-**Type-level tacit** — `bind<std::vector, hole>::with<int>` -> `std::vector<int>` works (validated),
-but it is a *separate* facility with a **type-level** placeholder, not the value `_`, and mixing type
-and value template arguments hits the same single-kind-pack wall as the macros above — the two are the
-same problem wearing two hats. A reflection build could unify them via `std::meta::substitute`.
+**Type-level tacit** *(implemented)* — `bind<F, args...>::with<Xs...>` partially applies a class
+template. `_` reuses its own identifier at the type level via the elaborated `struct _` (an old C
+trick: a class and a variable can share a name), so the hole is `struct _` and fixed args stay plain
+types — `bind<std::map, int, struct _>::with<double>` == `std::map<int, double>`. A P2996 build can
+generalize substitution to alias templates / non-type params via `std::meta::substitute` (gated hook).
+
+**Adoption / packaging** *(in progress)* — added `install()` + a generated `tacitConfig.cmake` so
+`find_package(tacit)` and FetchContent work, and a `TACIT_VERSION` macro. Still worth doing: a Godbolt
+"try it" link, clearer diagnostics (named concepts), and a short recipes section.

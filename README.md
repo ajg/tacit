@@ -80,6 +80,11 @@ Every single-argument closure `_` produces is a small composable `fn`; the multi
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
 `x -> size(front(x))` — handy as a projection: `std::ranges::sort(words, {}, _.front().size())`.
 
+A few `_`-agnostic combinators build pipelines, each returning an `fn` so results keep composing:
+`f | g` composes left-to-right (`x -> g(f(x))`), `tacit::fanout(f, g, …)` maps a value to a tuple of
+projections (`x -> {f(x), g(x)}`), and `tacit::first` / `tacit::second` transform one component of a
+pair. `operator|` never clashes with the ranges pipe — its left operand is a range, not an `fn`.
+
 ### Application
 
 There's a third way to apply. Where `_.size()` applies a *named member* and `_ == y` applies an
@@ -172,12 +177,30 @@ stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#includ
 (just as `import std;` exports no macros). Verified on clang; GCC's `-fmodules-ts` isn't reliable for
 this pattern yet, so prefer `#include` there.
 
+## Type-level `_`
+
+`_` doubles as a *type-level* hole for partially applying a class template. Because a template
+argument list can't hold the value `_`, the hole is written `struct _` (its tag-namespace twin), so
+fixed arguments stay plain types:
+
+```cpp
+tacit::bind<std::vector, struct _>::with<int>          // std::vector<int>
+tacit::bind<std::map, int, struct _>::with<double>     // std::map<int, double>   (partial)
+```
+
 ## Build & test
 
 Header-only — just add `include/` to your include path, or use CMake:
 
 ```cmake
 add_subdirectory(tacit)
+target_link_libraries(your_target PRIVATE tacit::tacit)
+```
+
+Or install it and `find_package`:
+
+```cmake
+find_package(tacit REQUIRED)   # after `cmake --install`
 target_link_libraries(your_target PRIVATE tacit::tacit)
 ```
 
@@ -192,7 +215,7 @@ ctest --test-dir build --output-on-failure
 ## On the name
 
 `tacit` names the paradigm (point-free / tacit programming). The type of `_` is `tacit::lieutenant` —
-French *lieu tenant*, literally "place-holding," a stand-in — which is exactly what `_` is, while
+French *lieu tenant*, literally "place-holder," a stand-in — which is exactly what `_` is, while
 sidestepping the loaded English word "placeholder" (already spoken for by `std::placeholders` and by
 the grammar term *placeholder type specifier* for `auto`).
 
