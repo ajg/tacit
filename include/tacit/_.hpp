@@ -350,6 +350,33 @@ struct lieutenant {
 
 inline constexpr lieutenant _;
 
+// ------------------------------------------------------------------------------------------------
+// Heterogeneous element combinators: drive a callable over the elements of a tuple-like. Built on
+// std::apply + fold-expressions (C++23); a `template for` (C++26) path can later extend them to
+// arbitrary aggregates and reflection ranges. They are `_`-agnostic (any callable works) but pair
+// naturally with `_`'s closures, e.g. transform_elements(t, _.size()) or any_of_element(t,
+// _.empty()).
+template <class Tup, class F> constexpr void for_each_element(Tup &&t, F &&f) {
+  std::apply([&](auto &&...xs) { (f(std::forward<decltype(xs)>(xs)), ...); }, std::forward<Tup>(t));
+}
+template <class Tup, class F> [[nodiscard]] constexpr bool any_of_element(Tup &&t, F &&f) {
+  return std::apply(
+      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) || ...); },
+      std::forward<Tup>(t));
+}
+template <class Tup, class F> [[nodiscard]] constexpr bool all_of_element(Tup &&t, F &&f) {
+  return std::apply(
+      [&](auto &&...xs) { return (static_cast<bool>(f(std::forward<decltype(xs)>(xs))) && ...); },
+      std::forward<Tup>(t));
+}
+template <class Tup, class F> [[nodiscard]] constexpr bool none_of_element(Tup &&t, F &&f) {
+  return !tacit::any_of_element(std::forward<Tup>(t), std::forward<F>(f));
+}
+template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tup &&t, F &&f) {
+  return std::apply([&](auto &&...xs) { return std::tuple{f(std::forward<decltype(xs)>(xs))...}; },
+                    std::forward<Tup>(t));
+}
+
 } // namespace tacit
 
 // Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>` alone suffices (no
