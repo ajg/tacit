@@ -74,27 +74,49 @@ std::ranges::for_each(thunks, _());  // invoke each nullary callable
 ## Derive your own placeholder
 
 The vocabulary-independent machinery (operator sections, application, reflection) lives in
-`TACIT_CORE(Self)`. A domain placeholder is a struct that lists the method names it wants and drops in
-the core. Opt into keeping the generator macros with `TACIT_KEEP_MACROS` before including:
+`TACIT_CORE(Self)`. The shortest way to make a placeholder is `TACIT_LIEUTENANT`, which declares the
+type and its object in one statement. Opt into keeping the generator macros with `TACIT_KEEP_MACROS`
+before including:
 
 ```cpp
 #define TACIT_KEEP_MACROS
 #include <tacit/_.hpp>
 #include <algorithm>
-#include <vector>
 using tacit::_;
 using namespace std::ranges;
 
 namespace bank {
-struct teller {
-  TACIT_MEMBER(deposit) TACIT_MEMBER(balance) TACIT_MEMBER(freeze)  // your methods
-  TACIT_CORE(teller)
-};
-inline constexpr teller it;
+TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);  // type `teller` + object `it` + methods
 }
 
 sort(accounts, {}, bank::it.balance());
 bank::it.deposit(_)(account, 100);   // blanks work in derived placeholders too
+```
+
+Need more control — hand-written members, or the whole std vocabulary? Write the struct yourself:
+list names with `TACIT_MEMBERS(a, b, c);` (and/or `TACIT_STD_MEMBERS(TACIT_MEMBER)`), then drop in
+`TACIT_CORE(Self)`:
+
+```cpp
+namespace bank {
+struct teller {
+  TACIT_MEMBERS(deposit, balance, freeze);  // one name or many; semicolon-terminated
+  TACIT_CORE(teller)
+};
+inline constexpr teller it;
+}
+```
+
+To add names to the built-in `_` instead of deriving a new placeholder, pre-`#define`
+`TACIT_EXTRA_MEMBERS` before the include (it only ever *adds* to the std vocabulary — and needs no
+`TACIT_KEEP_MACROS`):
+
+```cpp
+#define TACIT_EXTRA_MEMBERS(X) X(area) X(perimeter)
+#include <tacit/_.hpp>
+using tacit::_;
+
+std::ranges::sort(shapes, {}, _.area());   // _.area() is now first-class on _
 ```
 
 Blank detection is trait-based, so `_` is recognised as a blank in any placeholder's arguments.

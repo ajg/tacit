@@ -25,21 +25,21 @@
 //  for a named lambda the moment you need to reorder or reuse an argument).
 //
 //  DERIVE YOUR OWN.  The vocabulary-independent machinery (operator sections, application, the
-//  reflective hatch) lives in TACIT_CORE(Self). A domain placeholder is just a struct that lists
-//  the method names it wants and drops in the core:
+//  reflective hatch) lives in TACIT_CORE(Self). The shortest way to make a placeholder is
+//  TACIT_LIEUTENANT, which declares the type and its object in one statement:
 //
+//      #define TACIT_KEEP_MACROS
+//      #include <tacit/_.hpp>
 //      namespace bank {
-//        struct teller {
-//          TACIT_MEMBER(deposit) TACIT_MEMBER(balance) TACIT_MEMBER(freeze)   // list your methods,
-//          TACIT_STD_MEMBERS(TACIT_MEMBER)          // and/or pull the whole std vocabulary
-//          TACIT_CORE(teller)                     // operators + application + reflection
-//        };
-//        inline constexpr teller it;              // your own object
+//        TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);   // type + object + your methods
 //      }
-//      // now:  ranges::sort(accounts, {}, it.balance());   it.deposit(_)(acct, 100);
+//      // now:  ranges::sort(accounts, {}, bank::it.balance());   bank::it.deposit(_)(acct, 100);
 //
-//  This needs the generator macros, which are undefined by default (so a plain include exports only
-//  `_`); `#define TACIT_KEEP_MACROS` before including to keep them available for deriving.
+//  For more control, write the struct yourself — list names with TACIT_MEMBERS(a, b, c); and/or
+//  TACIT_STD_MEMBERS(TACIT_MEMBER) to pull the whole std vocabulary, then drop in TACIT_CORE(Self).
+//  These need the generator macros, undefined by default (so a plain include exports only `_`);
+//  `#define TACIT_KEEP_MACROS` before including to keep them. To instead add names to the built-in
+//  `_`, pre-#define TACIT_EXTRA_MEMBERS(X) (no TACIT_KEEP_MACROS needed) — see below.
 //
 //  THREE LAYERS
 //    1. First-class vocabulary — generated from the curated tables (or your own). Pure C++23
@@ -173,6 +173,27 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
                } { return std::forward<X>(x).NAME(a...); };                                        \
   }
 
+//  List helpers. TACIT_MEMBER is the low-level, gluable applicator (used by the tables below);
+//  these are the user-facing forms. Both are semicolon-terminated and -Wpedantic-clean, and both
+//  accept one name or many (up to 64):
+//      TACIT_MEMBERS(deposit, balance, freeze);          // inside a hand-written struct
+//      TACIT_LIEUTENANT(teller, it, deposit, balance);   // whole placeholder: type + instance
+#define TACIT_PARENS ()
+#define TACIT_EXPAND(...)   TACIT_EXPAND_C(TACIT_EXPAND_C(TACIT_EXPAND_C(TACIT_EXPAND_C(__VA_ARGS__))))
+#define TACIT_EXPAND_C(...) TACIT_EXPAND_B(TACIT_EXPAND_B(TACIT_EXPAND_B(TACIT_EXPAND_B(__VA_ARGS__))))
+#define TACIT_EXPAND_B(...) TACIT_EXPAND_A(TACIT_EXPAND_A(TACIT_EXPAND_A(TACIT_EXPAND_A(__VA_ARGS__))))
+#define TACIT_EXPAND_A(...) __VA_ARGS__
+#define TACIT_FE(a, ...) TACIT_MEMBER(a) __VA_OPT__(TACIT_FE_AGAIN TACIT_PARENS (__VA_ARGS__))
+#define TACIT_FE_AGAIN() TACIT_FE
+#define TACIT_MEMBER_LIST(...) __VA_OPT__(TACIT_EXPAND(TACIT_FE(__VA_ARGS__)))
+#define TACIT_MEMBERS(...) TACIT_MEMBER_LIST(__VA_ARGS__) static_assert(true)
+#define TACIT_LIEUTENANT(Type, Obj, ...)                                                           \
+  struct Type {                                                                                    \
+    TACIT_MEMBER_LIST(__VA_ARGS__)                                                                  \
+    TACIT_CORE(Type)                                                                               \
+  };                                                                                               \
+  inline constexpr Type Obj
+
 //  Unary / binary customization-point forwarders (route through std::ranges niebloids).
 #define TACIT_CPO1(NAME, CPO)                                                                      \
   [[nodiscard]] static constexpr auto NAME() {                                                     \
@@ -305,9 +326,17 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   X(empty,  std::ranges::empty)  X(data,  std::ranges::data)
 // clang-format on
 
-// The default placeholder: the full std vocabulary plus the reusable core.
+// Additive extension hook for the default `_`: pre-#define this before including to add your own
+// first-class names to the built-in placeholder (it only ever adds to the std vocabulary, never
+// removes), e.g.  #define TACIT_EXTRA_MEMBERS(X) X(area) X(perimeter)
+#ifndef TACIT_EXTRA_MEMBERS
+#define TACIT_EXTRA_MEMBERS(X)
+#endif
+
+// The default placeholder: the full std vocabulary (plus any TACIT_EXTRA_MEMBERS) and the core.
 struct lieutenant {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
+  TACIT_EXTRA_MEMBERS(TACIT_MEMBER)
   TACIT_STD_CPOS1(TACIT_CPO1)
   TACIT_CPO2(swap, std::ranges::swap)
   TACIT_CORE(lieutenant)
@@ -343,4 +372,15 @@ using tacit::_;
 #undef TACIT_CORE
 #undef TACIT_STD_MEMBERS
 #undef TACIT_STD_CPOS1
+#undef TACIT_MEMBERS
+#undef TACIT_LIEUTENANT
+#undef TACIT_MEMBER_LIST
+#undef TACIT_FE
+#undef TACIT_FE_AGAIN
+#undef TACIT_PARENS
+#undef TACIT_EXPAND
+#undef TACIT_EXPAND_A
+#undef TACIT_EXPAND_B
+#undef TACIT_EXPAND_C
+#undef TACIT_EXTRA_MEMBERS
 #endif
