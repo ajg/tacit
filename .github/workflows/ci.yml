@@ -23,7 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build and run `import tacit;` (clang)
+        # clang picks the newest libstdc++ on the runner (gcc-14), whose <ranges> hits a type-alias
+        # template redefinition under C++20 modules; pin to gcc-13's library, which is bug-free.
         run: |
-          clang++-18 -std=c++23 -Iinclude --precompile tacit.cppm -o tacit.pcm
-          clang++-18 -std=c++23 -Iinclude -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
+          FLAGS="-std=c++23 --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -Iinclude"
+          clang++-18 $FLAGS --precompile tacit.cppm -o tacit.pcm
+          clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
           ./module_check

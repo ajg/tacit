@@ -38,23 +38,39 @@ They are `_`-agnostic but pair naturally with `_`'s closures, e.g. `transform_el
 A `template for` (C++26, `__cpp_expansion_statements`) path can later extend them to arbitrary
 aggregates and reflection ranges behind a `TACIT_HAS_EXPANSION` flag — no API change.
 
-## On the table
+## Next: the hybrid (member chaining + projected blanks)
 
-**Template-argument members** — `_.get<0>()`, `_.as<int>()`. A member template *can* parse on the
-concrete `_`, but a template parameter *pack* is single-kind, so one macro cannot accept both
-`foo<int>` (type) and `foo<0>` (value) — it needs two overloads plus the runtime path. Best offered
-as an opt-in generator (`TACIT_TMEMBER`) reached for on domain member-templates, not baked into the
-~60-name std vocabulary. A reflection build could instead expose `_.call<"get", 0>()` via
-`std::meta::substitute`.
+Prototyping the items below (standalone, on g++ 13 / clang 18) showed that three of them are one
+change, not three. Today `_` (the `lieutenant`) and a composed projection (`detail::fn`) are separate
+types: `fn` composes but carries no vocabulary and is not a blank. Give `fn` the vocabulary and
+blank-ness and these fall out together:
 
-**Projected blanks** — generalize a blank from the identity `_` to any `fn`, so `_.foo(_.size())`
-would mean `(obj, x) -> obj.foo(size(x))`. Falls out of teaching `make_section` to apply each blank's
-wrapped function; the identity `_` stays the plain blank.
+- **Member chaining** — `_.trim().size()` == `x -> size(trim(x))`. Member access on a projection
+  composes, which *is* function composition; the explicit combinator below then shrinks to a
+  convenience.
+- **Projected blanks** — `_.foo(_.size())` == `(obj, x) -> obj.foo(size(x))`. An ordinary blank is
+  just a projected blank whose projection is identity; `make_section` learns to apply each blank's
+  projection to its fill instead of taking it raw.
 
-**Function composition combinator** — an explicit `f | g` / `compose` spelling for chaining two
-projections, beyond the operator/subscript composition above.
+The catch that also fell out: *full* unification (`_` becomes `ph<identity>`) collides with the
+application combinator — if `_` is the identity projection then `_(3)` means `3`, which can't also
+mean `λf. f(3)`. So the plan is the **hybrid**: keep `_` as the distinct entry point (it keeps `_()`,
+`_[i]`, and being the identity blank) and extend only its *results* — `fn` gains the vocabulary and
+projected-blank-ness. That is an extension of v0.2's `fn`, not a rewrite. Decided: **yes to member
+chaining** — each `fn<F>` carries the ~60 vocabulary members (declared once, instantiated on use).
 
-**Type-level tacit** — `_` as a placeholder in a *template* argument list (`bind<std::vector, _>`
-yields a one-argument metafunction), the type-level twin of value blanks. Feasible because
-`lieutenant` is an empty structural type usable as a non-type template argument, but it is a separate
-sublibrary.
+## Still on the table
+
+**Explicit compose combinator** — `g | h` for chaining two *pre-built* named closures
+(`auto f = _.trim(); f | _.size()`); inline member chaining covers the common case. `operator|`
+constrained to `fn | fn` does not collide with the ranges pipe (`range | adaptor`).
+
+**Template-argument members** — `_.get<0>()`, `_.as<int>()`. After the hybrid these go into the
+*shared* vocabulary, so they would work on `_` and every projection at once. A template parameter pack
+is single-kind, so one macro cannot take both `foo<int>` (type) and `foo<0>` (value) — it needs two
+overloads plus the runtime path, offered as an opt-in generator (`TACIT_TMEMBER` / `TACIT_VMEMBER`).
+
+**Type-level tacit** — `bind<std::vector, hole>::with<int>` -> `std::vector<int>` works (validated),
+but it is a *separate* facility with a **type-level** placeholder, not the value `_`, and mixing type
+and value template arguments hits the same single-kind-pack wall as the macros above — the two are the
+same problem wearing two hats. A reflection build could unify them via `std::meta::substitute`.
