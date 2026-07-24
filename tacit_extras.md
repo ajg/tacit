@@ -66,6 +66,16 @@ chaining produces a byte-identical object file to pre-hybrid v0.2 (16240 bytes e
 front-end compile time rose ~4% (~40 ms) on a real TU, negligible for parsing the header alone. At
 runtime the composed closures inline away — no dispatch, no allocation.
 
+## Exported surface (decision: document, don't move)
+
+The public surface is now `_` plus a handful of *qualified* free helpers (`fanout`, `first`, `second`,
+the `*_element` combinators, `bind`) and the operator forms. The "one symbol" promise is about
+*scope*, and it holds: `using tacit::_;` brings in only `_`; operators arrive via ADL; the type-level
+hole reuses `_` as `struct _` (no new name); and the free helpers are only ever qualified, so they
+never enter a user's scope. Decision (pre-v1, experimental): document this precisely and leave the
+helpers flat in `tacit::` — a sub-namespace would fight the flat-namespace preference, and qualifying
+them already isolates them. Revisit which helpers stay in once usage tells us what's actually wanted.
+
 ## Still on the table
 
 **Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`),

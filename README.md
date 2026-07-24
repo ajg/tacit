@@ -19,10 +19,15 @@ transform(words, out, _.size());                // string lengths
 nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::views
 ```
 
-`_` is a single exported name: a plain `using tacit::_;` is all you ever need — the vocabulary is
-reached through the object, and the operator forms are hidden friends found by ADL. (Prefer
-`#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the `using`
-for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.)
+`_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
+reached *through* the object, and the operator forms (sections, `|`) are hidden friends found by ADL,
+so they need no `using`. Everything else is a qualified `tacit::` free helper — `fanout`, `first`,
+`second`, the `*_element` tuple combinators, and the type-level `bind` — which never enters your scope
+unless you name it (so prefer `using tacit::_;` over `using namespace tacit;`). The type-level hole
+reuses the same identifier as `struct _`, adding no name of its own.
+
+Prefer `#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the
+`using` for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.
 
 ## Requirements
 
