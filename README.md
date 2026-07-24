@@ -8,12 +8,14 @@ whatever they're later applied to — so you can hand operations to algorithms w
 
 ```cpp
 #include <tacit/_.hpp>
+#include <algorithm>  // the ranges algorithms live here, not in <tacit/_.hpp>
+#include <ranges>     // std::views
 using tacit::_;
 
-std::ranges::sort(people, {}, _.age());               // sort by age
-std::ranges::count_if(v, (_ > 0) && (_ < 10));         // 0 < x < 10   (with the fn wrapper; see notes)
-std::ranges::transform(words, out, _.size());          // lengths
-v | std::views::filter(_ != 0) | std::views::take(3);  // drops into std::views
+std::ranges::sort(nums, _ < _);                     // ascending (two-blank comparator)
+std::ranges::count_if(nums, _ == 0);                // count zeros
+std::ranges::transform(words, out, _.size());       // string lengths
+nums | std::views::filter(_ != 0) | std::views::take(2);  // predicate drops into std::views
 ```
 
 `_` is a single exported name: a plain `using tacit::_;` is all you ever need — the vocabulary is
@@ -65,6 +67,9 @@ the core. Opt into keeping the generator macros with `TACIT_KEEP_MACROS` before 
 ```cpp
 #define TACIT_KEEP_MACROS
 #include <tacit/_.hpp>
+#include <algorithm>
+#include <vector>
+using tacit::_;
 
 namespace bank {
 struct teller {
