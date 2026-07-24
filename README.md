@@ -94,14 +94,16 @@ bank::it.deposit(_)(account, 100);   // blanks work in derived placeholders too
 ```
 
 Need more control — hand-written members, or the whole std vocabulary? Write the struct yourself:
-list names with `TACIT_MEMBERS(a, b, c);` (and/or `TACIT_STD_MEMBERS(TACIT_MEMBER)`), then drop in
-`TACIT_CORE(Self)`:
+one member per line (or `TACIT_MEMBERS(a, b, c);` for a compact list), and/or
+`TACIT_STD_MEMBERS(TACIT_MEMBER)` to pull the whole vocabulary, then drop in `TACIT_CORE(Self)`:
 
 ```cpp
 namespace bank {
 struct teller {
-  TACIT_MEMBERS(deposit, balance, freeze);  // one name or many; semicolon-terminated
-  TACIT_CORE(teller)
+  TACIT_MEMBER(deposit);   // one line per member, one semicolon per line
+  TACIT_MEMBER(balance);
+  TACIT_MEMBER(freeze);
+  TACIT_CORE(teller);
 };
 inline constexpr teller it;
 }
@@ -112,7 +114,7 @@ To add names to the built-in `_` instead of deriving a new placeholder, pre-`#de
 `TACIT_KEEP_MACROS`):
 
 ```cpp
-#define TACIT_EXTRA_MEMBERS(X) X(area) X(perimeter)
+#define TACIT_EXTRA_MEMBERS(X) X(area); X(perimeter);
 #include <tacit/_.hpp>
 using tacit::_;
 

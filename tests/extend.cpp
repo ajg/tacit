@@ -1,5 +1,5 @@
 // Extend the built-in `_` with domain names, without deriving a new placeholder.
-#define TACIT_EXTRA_MEMBERS(X) X(area) X(perimeter)
+#define TACIT_EXTRA_MEMBERS(X) X(area); X(perimeter);
 #include <algorithm>
 #include <cassert>
 #include <ranges>

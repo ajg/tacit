@@ -22,11 +22,12 @@ namespace bank {
 TACIT_LIEUTENANT(teller, it, deposit, balance, has_value);
 }
 
-// Manual form (for hand-written members or the std table): TACIT_MEMBERS + TACIT_CORE.
+// Manual form: one member per line (or TACIT_MEMBERS(a, b, ...) for a compact list), then the core.
 namespace store {
 struct clerk {
-  TACIT_MEMBERS(deposit, balance);
-  TACIT_CORE(clerk)
+  TACIT_MEMBER(deposit);
+  TACIT_MEMBER(balance);
+  TACIT_CORE(clerk);
 };
 inline constexpr clerk it;
 }
