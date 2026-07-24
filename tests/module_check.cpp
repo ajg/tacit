@@ -20,5 +20,7 @@ int main() {
   assert((_.size() >= 2u)(v));                 // composition (fn hidden friends) across the module
   static_assert(                               // type-level bind re-exported across the module
       std::is_same_v<tacit::bind<std::vector, struct _>::with<int>, std::vector<int>>);
+  static_assert(                               // type-level projection reached through the same `_`
+      std::is_same_v<tacit::_::value_type::of<std::vector<int>>, int>);
   return 0;
 }

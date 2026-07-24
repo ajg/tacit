@@ -389,6 +389,44 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 #define TACIT_EXTRA_MEMBERS(X)
 #endif
 
+// ------------------------------------------------------------------------------------------------
+//  Type-level projection vocabulary: the twin of the value-level member table above, but for types.
+//  Each entry is a metafunction living inside `struct _`, pulling a nested member out of a
+//  later-supplied type X and applied as `_::name::of<X>`. TACIT_TYPE_MEMBER projects a nested
+//  type/alias (`X::name`); TACIT_TYPE_TEMPLATE projects a nested template (`X::template name<A...>`),
+//  reached as `_::name<A...>::of<X>`. `of` is the applier (distinct from bind's hole-filling `with`).
+#define TACIT_TYPE_MEMBER(NAME)                                                                     \
+  struct NAME { template <class X> using of = typename X::NAME; };                                  \
+  static_assert(true)
+#define TACIT_TYPE_TEMPLATE(NAME)                                                                   \
+  template <class... A> struct NAME {                                                               \
+    template <class X> using of = typename X::template NAME<A...>;                                  \
+  };                                                                                                \
+  static_assert(true)
+
+// clang-format off
+//  The standard nested-type vocabulary (one editable table, grouped by role). Every name here is a
+//  nested type some standard component exposes; a projection instantiates only on use, so listing a
+//  name a given X lacks costs nothing until `_::name::of<X>` is actually asked for.
+#define TACIT_STD_TYPE_MEMBERS(X)                                                                   \
+  /* element */ X(value_type); X(element_type); X(reference); X(const_reference);                  \
+                X(pointer); X(const_pointer);                                                       \
+  /* size    */ X(size_type); X(difference_type);                                                  \
+  /* iterate */ X(iterator); X(const_iterator); X(reverse_iterator); X(const_reverse_iterator);    \
+  /* assoc   */ X(key_type); X(mapped_type); X(key_compare); X(value_compare);                     \
+  /* alloc   */ X(allocator_type);                                                                 \
+  /* pair    */ X(first_type); X(second_type);                                                     \
+  /* traits  */ X(char_type); X(traits_type); X(int_type);                                         \
+  /* meta    */ X(type);
+// clang-format on
+
+//  Additive extension hook for the type-level `_`: a raw block (so it can mix TACIT_TYPE_MEMBER and
+//  TACIT_TYPE_TEMPLATE), pre-#defined before including, e.g.
+//    #define TACIT_EXTRA_TYPE_MEMBERS TACIT_TYPE_MEMBER(shape_tag); TACIT_TYPE_TEMPLATE(rebind);
+#ifndef TACIT_EXTRA_TYPE_MEMBERS
+#define TACIT_EXTRA_TYPE_MEMBERS
+#endif
+
 // clang-format off
 namespace detail {
 // The composable projection wrapper (forward-declared above). Beyond call, subscript, and the
@@ -465,8 +503,14 @@ struct lieutenant {
   TACIT_CORE(lieutenant);
 };
 
-struct _ {}; // type-level blank; the value `_` (next) hides it in ordinary lookup, so reach the
-             // type via the elaborated `struct _`.
+// The type-level `_`: a blank for `bind` AND a projection namespace (`_::name::of<X>`). The value `_`
+// (next) hides it in ordinary lookup, but a name before `::` is looked up considering only types,
+// namespaces, and templates, so `_::name` reaches this struct past the value; elsewhere reach the
+// type via the elaborated `struct _`.
+struct _ {
+  TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
+  TACIT_EXTRA_TYPE_MEMBERS
+};
 inline constexpr lieutenant _;
 
 // Closure combinators (Haskell arrow flavour). `_`-agnostic — any callable works — and each returns
@@ -501,6 +545,15 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 //   bind<std::vector, struct _>::with<int>              // std::vector<int>
 //   bind<std::map, int, struct _>::with<double>         // std::map<int, double>   (partial)
 //   bind<std::map, struct _, struct _>::with<char, int> // std::map<char, int>
+//
+// The dual of bind is projection: where bind wraps the hole in an *outer* template, `_::name::of<X>`
+// pulls a *member* out of X — the type-level twin of the value-level member vocabulary. It is a
+// closed vocabulary (each name is declared in `struct _`, table above; add your own via
+// TACIT_EXTRA_TYPE_MEMBERS), applied with `::of` since there is no `operator()` at the type level:
+//
+//   _::value_type::of<std::vector<int>>     // int
+//   _::mapped_type::of<std::map<int, char>> // char
+//   _::value_type::of<_::value_type::of<T>> // chains by nesting (T's value_type's value_type)
 namespace detail {
 typedef struct _ blank; // handle on the blank type
 // Walk the argument list, replacing each `struct _` blank with the next of Xs...; keep fixed types.
@@ -591,6 +644,9 @@ using tacit::_;
 #undef TACIT_STD_CPOS1
 #undef TACIT_MEMBERS
 #undef TACIT_LIEUTENANT
+#undef TACIT_TYPE_MEMBER
+#undef TACIT_TYPE_TEMPLATE
+#undef TACIT_STD_TYPE_MEMBERS
 #undef TACIT_FE
 #undef TACIT_FE_AGAIN
 #undef TACIT_PARENS
@@ -599,4 +655,5 @@ using tacit::_;
 #undef TACIT_EXPAND_B
 #undef TACIT_EXPAND_C
 #undef TACIT_EXTRA_MEMBERS
+#undef TACIT_EXTRA_TYPE_MEMBERS
 #endif

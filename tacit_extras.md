@@ -123,6 +123,20 @@ trick: a class and a variable can share a name), so the blank is `struct _` and 
 types — `bind<std::map, int, struct _>::with<double>` == `std::map<int, double>`. A P2996 build can
 generalize substitution to alias templates / non-type params via `std::meta::substitute` (gated hook).
 
+**Type-level projection** *(implemented)* — the dual of `bind`: where `bind` wraps the hole in an
+*outer* template, `_::name::of<X>` pulls a nested member *out* of X (`_::value_type::of<vector<int>>`
+== `int`), the type-level twin of the value-level member vocabulary. It works because a name before
+`::` is looked up considering only types, namespaces, and templates ([basic.lookup.qual]), so `_::name`
+reaches `struct _` past the value that hides it — `_` now serves as value placeholder, bind blank, and
+projection namespace under one symbol. Three constraints, all inherent rather than incidental: there is
+no `operator()` at the type level, so a projection is *applied* with `::of<X>` (or by nesting, or a
+`transform`), never called — the deep asymmetry with value-level `_.foo()`; the vocabulary is closed
+(each name is declared in `struct _`, extend via `TACIT_EXTRA_TYPE_MEMBERS`), since `::` demands a real
+member; and it inherits `bind`'s parameter-kind split — nested *templates* need a separate
+`TACIT_TYPE_TEMPLATE` entry, reached as `_::name<A...>::of<X>`. Reflection (P2996) could open the
+vocabulary, but only through a `_::member<"name">`-style spelling or a splice, never `_::name` for an
+arbitrary name.
+
 **Adoption / packaging** *(in progress)* — added `install()` + a generated `tacitConfig.cmake` so
 `find_package(tacit)` and FetchContent work, and a `TACIT_VERSION` macro. Still worth doing: a Godbolt
 "try it" link, clearer diagnostics (named concepts), and a short recipes section.

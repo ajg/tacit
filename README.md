@@ -203,6 +203,29 @@ tacit::bind<std::vector, struct _>::with<int>       // std::vector<int>
 tacit::bind<std::map, int, struct _>::with<double>  // std::map<int, double>
 ```
 
+`_` is also a type-level *projection* namespace — the dual of `bind`. Where `bind` wraps the hole in
+an outer template, `_::name::of<X>` pulls a nested member *out* of `X`: the type-level twin of the
+value-level member vocabulary. (`of` is the applier — there's no `operator()` at the type level — and
+`_::name` reaches the type past the value through the same qualified-lookup rule that makes `struct _`
+work.)
+
+```cpp
+tacit::_::value_type::of<std::vector<int>>          // int
+tacit::_::mapped_type::of<std::map<int, char>>      // char
+// chains by nesting: vector<vector<char>> -> vector<char> -> char
+tacit::_::value_type::of<tacit::_::value_type::of<std::vector<std::vector<char>>>>   // char
+```
+
+It's a closed vocabulary of standard nested-type names (`value_type`, `size_type`, `key_type`,
+`mapped_type`, `element_type`, `iterator`, …). Add your own — including nested-*template* projections,
+reached as `_::name<A...>::of<X>` — via `TACIT_EXTRA_TYPE_MEMBERS`:
+
+```cpp
+#define TACIT_EXTRA_TYPE_MEMBERS TACIT_TYPE_MEMBER(tag); TACIT_TYPE_TEMPLATE(rebind);
+#include <tacit/_.hpp>
+// tacit::_::tag::of<W>  ==  W::tag ;   tacit::_::rebind<char>::of<A>  ==  A::template rebind<char>
+```
+
 ## Build & test
 
 Header-only — just add `include/` to your include path, or use CMake:
