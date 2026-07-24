@@ -11,11 +11,12 @@ whatever they're later applied to — so you can hand operations to algorithms w
 #include <algorithm>  // the ranges algorithms live here, not in <tacit/_.hpp>
 #include <ranges>     // std::views
 using tacit::_;
+using namespace std::ranges;
 
-std::ranges::sort(nums, _ < _);                     // ascending (two-blank comparator)
-std::ranges::count_if(nums, _ == 0);                // count zeros
-std::ranges::transform(words, out, _.size());       // string lengths
-nums | std::views::filter(_ != 0) | std::views::take(2);  // predicate drops into std::views
+sort(nums, _ < _);                              // ascending (two-blank comparator)
+count_if(nums, _ == 0);                         // count zeros
+transform(words, out, _.size());                // string lengths
+nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::views
 ```
 
 `_` is a single exported name: a plain `using tacit::_;` is all you ever need — the vocabulary is
@@ -58,6 +59,18 @@ lambda the moment you need to reorder or reuse an argument.
 The comparison and arithmetic operators are finite and lexical: `_ == y`, `x + _`, `_ + _` all build
 the obvious closure.
 
+### Application
+
+There's a third way to apply. Where `_.size()` applies a *named member* and `_ == y` applies an
+*operator*, `_(args...)` applies the **subject itself** — it builds `[args...](f){ return f(args...); }`,
+the closure that calls its argument. It mirrors mapping a function over data: `_(3)` fans the value `3`
+across a set of callables, while `_()` (no args) simply invokes — handy for forcing a thunk.
+
+```cpp
+_(3)(std::negate{});                 // -> -3  (applies negate to 3)
+std::ranges::for_each(thunks, _());  // invoke each nullary callable
+```
+
 ## Derive your own placeholder
 
 The vocabulary-independent machinery (operator sections, application, reflection) lives in
@@ -70,17 +83,18 @@ the core. Opt into keeping the generator macros with `TACIT_KEEP_MACROS` before 
 #include <algorithm>
 #include <vector>
 using tacit::_;
+using namespace std::ranges;
 
 namespace bank {
 struct teller {
   TACIT_MEMBER(deposit) TACIT_MEMBER(balance) TACIT_MEMBER(freeze)  // your methods
   TACIT_CORE(teller)
 };
-inline constexpr teller $;
+inline constexpr teller it;
 }
 
-std::ranges::sort(accounts, {}, bank::$.balance());
-bank::$.deposit(_)(account, 100);   // blanks work in derived placeholders too
+sort(accounts, {}, bank::it.balance());
+bank::it.deposit(_)(account, 100);   // blanks work in derived placeholders too
 ```
 
 Blank detection is trait-based, so `_` is recognised as a blank in any placeholder's arguments.

@@ -34,9 +34,9 @@
 //          TACIT_STD_MEMBERS(TACIT_MEMBER)          // and/or pull the whole std vocabulary
 //          TACIT_CORE(teller)                     // operators + application + reflection
 //        };
-//        inline constexpr teller $;               // your own object / sigil
+//        inline constexpr teller it;              // your own object
 //      }
-//      // now:  ranges::sort(accounts, {}, $.balance());   $.deposit(_)(acct, 100);
+//      // now:  ranges::sort(accounts, {}, it.balance());   it.deposit(_)(acct, 100);
 //
 //  This needs the generator macros, which are undefined by default (so a plain include exports only
 //  `_`); `#define TACIT_KEEP_MACROS` before including to keep them available for deriving.
