@@ -223,6 +223,27 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }                                                                                                \
   static_assert(true)
 
+//  Range-adaptor verb (opt-in, behind TACIT_VIEWS). Unlike TACIT_MEMBER it BINDS its arguments as
+//  values — a predicate/transformer is a value, not a projected blank — and routes through
+//  std::views::ADAPT, so `_.filter(pred)` is x -> views::filter(x, pred): a *unary* fn that keeps
+//  chaining. `_.filter(p).take(2)` is then x -> views::take(views::filter(x, p), 2), a point-free lazy
+//  pipeline, and `(nums)` applies it. Binding (not projecting) the callable is exactly what keeps the
+//  result unary and chainable — a projected blank would make it a two-input section that can't chain.
+#define TACIT_VIEW(NAME, ADAPT)                                                                     \
+  template <class... A> [[nodiscard]] static constexpr auto NAME(A&&... a) {                        \
+    return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)         \
+             requires requires(X&& xx, A&&... aa) {                                                 \
+               std::views::ADAPT(std::forward<X>(xx), std::forward<A>(aa)...);                      \
+             } { return std::views::ADAPT(std::forward<X>(x), a...); }};                            \
+  }
+
+//  The range-adaptor table (opt-in). `transform` is deliberately absent — it already means the
+//  optional/ranges monadic member in the value vocabulary, so it needs a precedence call before it can
+//  double as a view. Add more here (join, common, keys, values, ...) as they earn their place.
+#define TACIT_VIEW_VERBS(X)                                                                         \
+  X(filter, filter) X(take, take) X(drop, drop)                                                     \
+  X(take_while, take_while) X(drop_while, drop_while) X(reverse, reverse)
+
 //  Apply a forwarder macro M to a comma-separated list of names, each terminated with `;`. This is
 //  the engine behind the TACIT_VERBS / TACIT_NOUNS extension hooks: the same list is driven through a
 //  different forwarder for `_`, its projections (`fn`), and the arrow proxy. Empty list -> nothing.
@@ -348,7 +369,7 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   TACIT_SECTION(==) TACIT_SECTION(!=) TACIT_SECTION(<) TACIT_SECTION(>)                            \
   TACIT_SECTION(<=) TACIT_SECTION(>=) TACIT_SECTION(+) TACIT_SECTION(-)                            \
   TACIT_SECTION(*) TACIT_SECTION(/) TACIT_SECTION(%) TACIT_SECTION(^)                              \
-  TACIT_SECTION(&) TACIT_SECTION(&&) TACIT_SECTION(||) TACIT_SECTION(<<) TACIT_SECTION(>>)         \
+  TACIT_SECTION(&) TACIT_SECTION(|) TACIT_SECTION(&&) TACIT_SECTION(||) TACIT_SECTION(<<) TACIT_SECTION(>>) \
   TACIT_UNARY(*) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~) TACIT_UNARY(&)        \
   TACIT_UNARY(++) TACIT_UNARY(--) TACIT_UNARY_POST(++) TACIT_UNARY_POST(--)                        \
   TACIT_ASSIGN(+=) TACIT_ASSIGN(-=) TACIT_ASSIGN(*=) TACIT_ASSIGN(/=) TACIT_ASSIGN(%=)             \
@@ -425,10 +446,17 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 // ------------------------------------------------------------------------------------------------
 //  Type-level projection vocabulary: the twin of the value-level member table above, but for types.
 //  Each entry is a metafunction living inside `struct _`, pulling a nested member out of a
-//  later-supplied type X and applied as `_::name::of<X>` — a nested type/alias (`X::name`). `of` is
-//  the applier (distinct from bind's hole-filling `with`).
+//  later-supplied type X and applied as `_::name::of<X>`. TACIT_TYPE_MEMBER projects a nested
+//  type/alias (`X::name`); TACIT_TYPE_TEMPLATE projects a nested *template* (`X::template name<A...>`,
+//  the rebind family), reached as `_::name<A...>::of<X>` — you supply the template's own arguments
+//  before applying. `of` is the applier (distinct from bind's hole-filling `with`).
 #define TACIT_TYPE_MEMBER(NAME)                                                                     \
   struct NAME { template <class X> using of = typename X::NAME; };                                  \
+  static_assert(true)
+#define TACIT_TYPE_TEMPLATE(NAME)                                                                   \
+  template <class... A> struct NAME {                                                               \
+    template <class X> using of = typename X::template NAME<A...>;                                  \
+  };                                                                                                \
   static_assert(true)
 
 // clang-format off
@@ -450,8 +478,15 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //  Additive extension hook for the type-level `_`: the twin of TACIT_VERBS, a comma list of bare
 //  nested-type names, each a first-class *noun* projected as `_.name` — reached as `_::name::of<X>`:
 //    #define TACIT_NOUNS shape_tag, payload_type
+//  TACIT_NOUN_TEMPLATES is the parameterized variant, for nested *templates* (`X::name<A...>`, the
+//  rebind family), reached as `_::name<A...>::of<X>`. Kept a separate list so TACIT_NOUNS stays a
+//  clean bare-name list; use it only when you actually project a nested template:
+//    #define TACIT_NOUN_TEMPLATES rebind
 #ifndef TACIT_NOUNS
 #define TACIT_NOUNS
+#endif
+#ifndef TACIT_NOUN_TEMPLATES
+#define TACIT_NOUN_TEMPLATES
 #endif
 
 // clang-format off
@@ -492,7 +527,7 @@ template <class F> struct fn {
   }
   TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
   TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
-  TACIT_FN_OP(&) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
+  TACIT_FN_OP(&) TACIT_FN_OP(|) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
 #undef TACIT_FN_OP
   // Unary operators compose through the projection: `op g` == x -> op g(x).
 #define TACIT_FN_UNARY(op)                                                                         \
@@ -509,13 +544,7 @@ template <class F> struct fn {
   TACIT_FN_UNARY(++) TACIT_FN_UNARY(--) TACIT_FN_UNARY_POST(++) TACIT_FN_UNARY_POST(--)
 #undef TACIT_FN_UNARY
 #undef TACIT_FN_UNARY_POST
-  // Left-to-right composition: `f | g` == x -> g(f(x)); g is any callable (incl. another fn), and the
-  // result is itself an fn so pipelines keep composing. No clash with the ranges pipe, whose left
-  // operand is a range, not an fn.
-  template <class G> [[nodiscard]] friend constexpr auto operator|(fn f, G g) {
-    return tacit::detail::fn{
-        [f, g](auto &&x) -> decltype(auto) { return g(f(std::forward<decltype(x)>(x))); }};
-  }
+  // (`|` is a bitwise section like `&`, above — general composition is `tacit::compose`, not `f | g`.)
   // Vocabulary — each name composes through the projection (member chaining). No-blank args only.
 #define TACIT_FN_MEMBER(NAME)                                                                      \
   template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
@@ -535,6 +564,20 @@ template <class F> struct fn {
   TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
   TACIT_FOR_EACH(TACIT_FN_MEMBER, TACIT_VERBS)
   TACIT_STD_CPOS1(TACIT_FN_CPO1)
+  // Range-adaptor verbs compose through the projection, so a pipeline keeps chaining (opt-in).
+#ifdef TACIT_VIEWS
+#define TACIT_FN_VIEW(NAME, ADAPT)                                                                  \
+  template <class... A> [[nodiscard]] constexpr auto NAME(A&&... a) const {                         \
+    return tacit::detail::fn{                                                                       \
+        [g = *this, ... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                   \
+          requires requires(X&& xx, A&&... aa) {                                                    \
+            std::views::ADAPT(std::declval<fn const&>()(std::forward<X>(xx)),                       \
+                              std::forward<A>(aa)...);                                               \
+          } { return std::views::ADAPT(g(std::forward<X>(x)), a...); }};                            \
+  }
+  TACIT_VIEW_VERBS(TACIT_FN_VIEW)
+#undef TACIT_FN_VIEW
+#endif
 #undef TACIT_FN_MEMBER
 #undef TACIT_FN_CPO1
 };
@@ -570,22 +613,38 @@ struct _ {
   TACIT_CPO2(swap, std::ranges::swap)
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_FOR_EACH(TACIT_TYPE_MEMBER, TACIT_NOUNS)
+  TACIT_FOR_EACH(TACIT_TYPE_TEMPLATE, TACIT_NOUN_TEMPLATES)
+#ifdef TACIT_VIEWS
+  TACIT_VIEW_VERBS(TACIT_VIEW)
+#endif
   [[nodiscard]] constexpr const detail::arrow* operator->() const { return &detail::arrow_v; }
   TACIT_CORE(_);
 };
 inline constexpr _ _;
 
 // Closure combinators (Haskell arrow flavour). `_`-agnostic — any callable works — and each returns
-// an fn, so results keep composing (member access, operator sections, `|`, ...).
-//   f | g              left-to-right compose  (operator on fn, above — always available)
+// an fn, so results keep composing (member access, operator sections, ...).
+//   compose(f, g, ...) left-to-right compose  x -> ...(g(f(x)))   (general function composition)
 //   fanout(f, g, ...)  x -> tuple{f(x), g(x), ...}         (Haskell &&&)
 //   first(f) / second(f)   transform one component of a pair   (Haskell first / second)
 //
-// These are free functions in `tacit`, so — unlike `|` (a hidden friend of fn, found by ADL) — they
-// add named symbols reached only by qualification. To keep the default surface at exactly `_` plus
-// the opt-in type-level `bind`, they are gated: `#define TACIT_COMBINATORS` before including to enable
-// them (and their `*_element` cousins below). Off by default; the machinery still compiles either way.
+// These are free functions in `tacit`, reached only by qualification. To keep the default surface at
+// exactly `_`, they are gated: `#define TACIT_COMBINATORS` before including to enable them (and their
+// `*_element` cousins below). Off by default; the machinery still compiles either way.
+//
+// NOTE: `compose` is where general composition lives now that `operator|` is an ordinary bitwise
+// section (`_ | y`), symmetric with `&`, rather than the old `f | g` compose. Member chaining
+// (`_.front().size()`) still composes vocabulary on the default surface; `compose` is for composing
+// arbitrary closures — `compose(_ + 1, _ * 2)(3)` == `(3 + 1) * 2` == 8.
 #ifdef TACIT_COMBINATORS
+template <class F, class... Gs> [[nodiscard]] constexpr auto compose(F f, Gs... gs) {
+  if constexpr (sizeof...(Gs) == 0)
+    return detail::fn{f};
+  else
+    return detail::fn{[f, rest = tacit::compose(gs...)](auto &&x) -> decltype(auto) {
+      return rest(f(std::forward<decltype(x)>(x)));
+    }};
+}
 template <class... Fs> [[nodiscard]] constexpr auto fanout(Fs... fs) {
   return detail::fn{[fs...](auto &&x) { return std::tuple{fs(x)...}; }};
 }
@@ -731,9 +790,16 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 //     an explicit non-default Compare/Allocator through a hole (drop to `apply`/`bind` for that).
 //   - `tuple` is variadic: a single LEADING hole + trailing pack is legal at any arity and portable;
 //     interior holes and multiple leading-hole specs are not (see tacit_extras.md).
+//   - `array` / `span` are value-parameterized (`<class, size_t>`): only the ELEMENT type is holed and
+//     the extent rides along as a literal (`array<struct _, 5>::with<int>`). No wrapper is needed
+//     because the value is a normal template argument — the reason this stays natural where the
+//     general primitive would demand a value wrapper. Holing the extent itself has no natural spelling
+//     and is intentionally not offered.
 #ifdef TACIT_STD_HOLES
+#include <array>
 #include <map>
 #include <set>
+#include <span>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -783,6 +849,18 @@ template <class... R> class tuple<TACIT_HOLE, R...> {
 public:
   template <class X> using with = tuple<X, R...>;
 };
+// value-parameterized containers: hole the ELEMENT type; the extent (a non-type parameter) rides
+// along as an ordinary literal — std::array<struct _, 5>::with<int> == std::array<int, 5>. This is the
+// user-free grain: the value is a normal template argument, no wrapper, no sentinel. (The mirror —
+// holing the *value* and fixing the type — has no natural spelling: a type hole can't sit in a size_t
+// slot, so it's intentionally absent; reach for a hand-written metafunction to vary an extent.)
+template <std::size_t N> struct array<TACIT_HOLE, N> {
+  template <class T> using with = array<T, N>;
+};
+template <std::size_t E> class span<TACIT_HOLE, E> {
+public:
+  template <class T> using with = span<T, E>;
+};
 #undef TACIT_HOLE
 } // namespace std
 #endif // TACIT_STD_HOLES
@@ -807,6 +885,8 @@ using tacit::_;
 // that yourself would otherwise mean re-deriving tacit's `__cpp_*` condition.
 #undef TACIT_MEMBER
 #undef TACIT_ARROW_MEMBER
+#undef TACIT_VIEW
+#undef TACIT_VIEW_VERBS
 #undef TACIT_CPO1
 #undef TACIT_CPO2
 #undef TACIT_SECTION
@@ -818,6 +898,7 @@ using tacit::_;
 #undef TACIT_STD_MEMBERS
 #undef TACIT_STD_CPOS1
 #undef TACIT_TYPE_MEMBER
+#undef TACIT_TYPE_TEMPLATE
 #undef TACIT_STD_TYPE_MEMBERS
 #undef TACIT_FE
 #undef TACIT_FE_AGAIN
@@ -829,3 +910,4 @@ using tacit::_;
 #undef TACIT_EXPAND_C
 #undef TACIT_VERBS
 #undef TACIT_NOUNS
+#undef TACIT_NOUN_TEMPLATES

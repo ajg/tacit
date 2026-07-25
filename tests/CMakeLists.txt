@@ -1,4 +1,4 @@
-foreach(t strict_using blanks using_underscore showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators)
+foreach(t strict_using blanks using_underscore showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views)
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE tacit::tacit)
   target_compile_options(${t} PRIVATE

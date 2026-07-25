@@ -1,8 +1,9 @@
 // Type-level projection: `_::name::of<X>` pulls a nested member out of a type — the type-level twin
 // of the value-level member vocabulary, and the dual of `bind` (which wraps rather than projects).
-// A custom nested-type projection is added to `_` via the TACIT_NOUNS hook to exercise both the
-// shipped vocabulary and a user-taught noun.
+// Custom projections are added to `_` via the extension hooks: TACIT_NOUNS for a nested type, and
+// TACIT_NOUN_TEMPLATES for a nested *template* (the `_::name<A...>::of<X>` rebind form).
 #define TACIT_NOUNS tag
+#define TACIT_NOUN_TEMPLATES rebound
 #include <tacit/_.hpp>
 
 #include <map>
@@ -39,11 +40,14 @@ template <class...> struct list {};
 static_assert(std::is_same_v<map_proj<list<std::vector<int>, std::map<char, bool>>, _::value_type>::type,
                              list<int, std::pair<const char, bool>>>);
 
-// TACIT_NOUNS hook: a user-declared nested-type projection, first-class on the same `_`
+// extension hooks: a user-declared nested-type (TACIT_NOUNS) and nested-*template* (TACIT_NOUN_TEMPLATES)
+// projection, both first-class on the same `_`
 struct Widget {
   using tag = int;
+  template <class U> struct rebound { using type = U *; };
 };
 static_assert(std::is_same_v<_::tag::of<Widget>, int>);
+static_assert(std::is_same_v<_::rebound<char>::of<Widget>::type, char *>);
 
 // projection coexists with bind on the same `struct _`
 static_assert(std::is_same_v<tacit::bind<std::vector, struct _>::with<int>, std::vector<int>>);

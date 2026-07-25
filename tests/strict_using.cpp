@@ -42,7 +42,8 @@ int main() {
 // Policy checks (preprocessor): generators gone on the clean path, feature flag kept.
 #if defined(TACIT_MEMBER) || defined(TACIT_CORE) || defined(TACIT_STD_MEMBERS) ||                   \
     defined(TACIT_FOR_EACH) || defined(TACIT_LIEUTENANT) || defined(TACIT_VERBS) ||                 \
-    defined(TACIT_NOUNS)
+    defined(TACIT_NOUNS) || defined(TACIT_NOUN_TEMPLATES) || defined(TACIT_TYPE_TEMPLATE) ||         \
+    defined(TACIT_VIEW) || defined(TACIT_VIEW_VERBS)
 #error "a generator macro leaked into the clean include"
 #endif
 #ifndef TACIT_HAS_REFLECTION

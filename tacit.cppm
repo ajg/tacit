@@ -24,6 +24,7 @@ using tacit::apply;
 using tacit::bind;
 using tacit::quote;
 #ifdef TACIT_COMBINATORS
+using tacit::compose;
 using tacit::fanout;
 using tacit::first;
 using tacit::second;

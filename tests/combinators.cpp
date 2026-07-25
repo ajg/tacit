@@ -1,5 +1,5 @@
-// Closure combinators: compose (|), fanout (&&&-style), and first/second on pairs.
-// fanout/first/second are opt-in — request them before including the header.
+// Closure combinators: compose, fanout (&&&-style), and first/second on pairs.
+// All are opt-in — request them before including the header.
 #define TACIT_COMBINATORS
 #include <algorithm>
 #include <cassert>
@@ -13,10 +13,11 @@
 using tacit::_;
 
 int main() {
-  // compose: `f | g` == x -> g(f(x))
-  auto dbl = _.size() | [](std::size_t n) { return n * 2; };
+  // compose: tacit::compose(f, g, ...) == x -> ...(g(f(x)))  (left to right)
+  auto dbl = tacit::compose(_.size(), [](std::size_t n) { return n * 2; });
   assert(dbl(std::string("ab")) == 4);
-  assert((_.front() | (_ == 'a'))(std::string("abc"))); // front, then compare
+  assert(tacit::compose(_.front(), _ == 'a')(std::string("abc"))); // front, then compare
+  assert(tacit::compose(_ + 1, _ * 2)(3) == 8);                    // (3 + 1) * 2, arbitrary closures
 
   // fanout: x -> tuple{ f(x), g(x), ... }
   auto [n, c] = tacit::fanout(_.size(), _.front())(std::string("abc"));
@@ -34,7 +35,7 @@ int main() {
   std::ranges::sort(v, {}, tacit::fanout(_.size(), _.front()));
   assert(v[0] == "a");
 
-  // the real ranges pipe still works alongside operator| (no hijack)
+  // the real ranges pipe still works (a range on the left, not an fn — no hijack)
   auto twos = v | std::views::filter([](auto &s) { return s.size() == 2; });
   assert(std::ranges::distance(twos) == 2);
   return 0;

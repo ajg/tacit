@@ -22,10 +22,10 @@ nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::vie
 ```
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
-reached *through* the object, and the operator forms (sections, `|`) are hidden friends found by ADL,
+reached *through* the object, and the operator sections are hidden friends found by ADL,
 so they need no `using`. Everything else is a qualified `tacit::` helper that never enters your scope.
 (The free-function combinators live behind `#define TACIT_COMBINATORS`, off by default — see
-[Composition](#composition); a small, experimental type-level surface is noted near the end.)
+[Composition](#composition).)
 
 Prefer `#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the
 `using` for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.
@@ -72,8 +72,9 @@ combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `
 through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
-bind the argument by reference, so `std::ranges::for_each(v, _ += 1)` updates `v` in place. (`operator|`
-stays composition, so bitwise `|` is intentionally absent — see the design notes.)
+bind the argument by reference, so `std::ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|`
+is an ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives
+in `tacit::compose`, not in `|`.
 
 ### Composition
 
@@ -93,15 +94,16 @@ Every single-argument closure `_` produces is a small composable `fn`; the multi
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
 `x -> size(front(x))` — handy as a projection: `std::ranges::sort(words, {}, _.front().size())`.
 
-`f | g` composes closures left-to-right (`x -> g(f(x))`); it's a hidden friend of `fn`, always
-available, and never clashes with the ranges pipe (whose left operand is a range, not an `fn`).
+For composing *arbitrary* closures left-to-right there's `tacit::compose(f, g, …)` (`x -> …(g(f(x)))`),
+behind `#define TACIT_COMBINATORS` — `compose(_ + 1, _ * 2)(3)` is `8`. (There's no `f | g` compose:
+`|` is a bitwise section like `&`. Member chaining still composes vocabulary on the default surface.)
 
-A few more `_`-agnostic combinators are available behind `#define TACIT_COMBINATORS` (off by default,
-to keep the surface at `_` + `bind`): `tacit::fanout(f, g, …)` maps a value to a tuple of projections
+A few more `_`-agnostic combinators live behind the same `#define TACIT_COMBINATORS` (off by default,
+to keep the surface at `_`): `tacit::fanout(f, g, …)` maps a value to a tuple of projections
 (`x -> {f(x), g(x)}`), `tacit::first` / `tacit::second` transform one component of a pair, and the
 `*_element` family (`transform_elements`, `any_of_element`, …) drives a closure over a tuple-like.
-Each returns an `fn`, so results keep composing. They're free `tacit::` functions rather than hidden
-friends, so they take qualification and a `#define` — the operators (`|`, sections) don't.
+Each returns an `fn`, so results keep composing. They're free `tacit::` functions, so they take
+qualification and the `#define`; the operator sections don't.
 
 ### Application
 
@@ -140,17 +142,6 @@ error — a domain verb sits safely alongside the standard vocabulary. The same 
 composable projections (`_.balance() < _.balance()`) and on the arrow proxy (`_->balance()`), so a
 verb behaves everywhere the built-in names do.
 
-Its type-level twin is **`TACIT_NOUNS`** — a comma list of nested-type names, each projected as
-`_::name::of<X>` (see [Type-level `_`](#type-level-_-experimental)):
-
-```cpp
-#define TACIT_NOUNS payload_type, shape_tag
-#include <tacit/_.hpp>
-using tacit::_;
-
-using P = _::payload_type::of<Message>;   // == Message::payload_type
-```
-
 Blank detection is trait-based, so `_` is recognised as a blank in any argument position.
 
 ## Reflective hatch (C++26)
@@ -169,31 +160,19 @@ path) lets you `#if` on whether they exist.
 ## Modules
 
 `import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
-and re-exports `_` and the type-level `bind` / `apply` / `quote`:
+and re-exports `_`:
 
 ```cpp
 import tacit;
 using tacit::_;
 ```
 
-Macros don't cross a module boundary, so the extension hooks (`TACIT_VERBS`, `TACIT_NOUNS`) are
-consumed at include time and stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`,
-`#include` to teach it your own names (just as `import std;` exports no macros). For the same reason
-`TACIT_COMBINATORS` can't be switched on from the consumer side; build the interface with
-`-DTACIT_COMBINATORS` to have it export the combinators too. Verified on clang; GCC's `-fmodules-ts`
-isn't reliable for this pattern yet, so prefer `#include` there.
-
-## Type-level `_` (experimental)
-
-The same `_` does double duty at the *type* level — a hole for partially applying a class template and
-a projection namespace for pulling nested members out of a type. `bind<F, args…>::with<Xs…>` fixes the
-template and fills its holed arguments; `apply<Slots…>::with<Fills…>` generalizes to holing the
-*template itself* (quote it with `quote<F>`), so it curries both grains under one op. An experimental
-`#define TACIT_STD_HOLES` adds the natural spelling — `std::map<struct _, int>::with<char>` — by
-injecting specializations into `namespace std` (off by default; it's a convenience, not a standards
-guarantee). That whole surface is unstable and left undocumented in detail here on purpose while it
-settles; see [`tacit_extras.md`](tacit_extras.md), and the `typelevel` / `typeproject` / `typeapply`
-tests for what works today.
+Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook is consumed at include time
+and stays with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to teach it your
+own names (just as `import std;` exports no macros). For the same reason `TACIT_COMBINATORS` can't be
+switched on from the consumer side; build the interface with `-DTACIT_COMBINATORS` to have it export
+the combinators too. Verified on clang; GCC's `-fmodules-ts` isn't reliable for this pattern yet, so
+prefer `#include` there.
 
 ## Build & test
 

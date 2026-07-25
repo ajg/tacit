@@ -4,8 +4,10 @@
 #define TACIT_STD_HOLES
 #include <tacit/_.hpp>
 
+#include <array>
 #include <map>
 #include <set>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -45,5 +47,8 @@ static_assert(std::is_same_v<std::set<struct _>::with<int>, std::set<int>>);
 // tuple: leading hole, any arity:
 static_assert(
     std::is_same_v<std::tuple<struct _, int, char>::with<double>, std::tuple<double, int, char>>);
+// value-parameterized: hole the element type, the extent (an NTTP) rides along as a literal:
+static_assert(std::is_same_v<std::array<struct _, 5>::with<int>, std::array<int, 5>>);
+static_assert(std::is_same_v<std::span<struct _, 4>::with<int>, std::span<int, 4>>);
 
 int main() { return 0; }

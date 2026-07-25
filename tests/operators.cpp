@@ -34,8 +34,10 @@ int main() {
     assert((&_)(c) == &c);  // address-of
   }
 
-  // ---- bitwise & / shift ----
+  // ---- bitwise & | / shift (| is an ordinary section now, symmetric with &) ----
   assert((_ & 0b0110)(0b1100) == 0b0100);
+  assert((_ | 0b0110)(0b1000) == 0b1110);      // x -> x | 0b0110
+  assert((_ | _)(0b1000, 0b0011) == 0b1011);   // (a,b) -> a | b  (two-input)
   assert((_ << 2)(3) == 12);
   assert((_ >> 1)(8) == 4);
 
@@ -67,7 +69,7 @@ int main() {
     std::ranges::for_each(v, _ *= 2);
     assert((v == std::vector<int>{22, 24, 26}));
     int m = 1;
-    (_ |= 4)(m);  // |= is distinct from compose |
+    (_ |= 4)(m);  // compound of the bitwise | section
     assert(m == 5);
   }
 
@@ -83,10 +85,5 @@ int main() {
     assert(_.get()(p) == p.get());  // the smart pointer's own member still via dot
   }
 
-  // ---- compose `|` is unaffected by the new bitwise/shift/assign operators ----
-  {
-    auto f = (_ + 1) | (_ * 2);
-    assert(f(3) == 8);
-  }
   return 0;
 }

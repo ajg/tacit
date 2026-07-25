@@ -71,7 +71,7 @@ runtime the composed closures inline away — no dispatch, no allocation.
 ## Exported surface (decision: gate the free helpers)
 
 The default surface is `_` plus the opt-in type-level `bind`, and it earns the "one symbol" promise on
-*scope*: `using tacit::_;` brings in only `_`; the operator forms (sections, `|`) arrive via ADL as
+*scope*: `using tacit::_;` brings in only `_`; the operator sections arrive via ADL as
 hidden friends of `fn`; and the type-level blank reuses `_` as `struct _`, adding no new name. `bind` is
 the sole extra qualified name, and it's inert unless you write it.
 
@@ -107,7 +107,7 @@ priced in portability, to weigh against staying macro-gated at one.
 
 ## Operator surface (implemented)
 
-Beyond comparison/arithmetic, the sections now cover bitwise `&`, shift/stream `<< >>`, logical
+Beyond comparison/arithmetic, the sections now cover bitwise `& |`, shift/stream `<< >>`, logical
 `&& ||`; the unary operators `* - + ! ~ &` and `++ --` (pre/post); assignment `=` and compound
 `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
 
@@ -126,18 +126,50 @@ Beyond comparison/arithmetic, the sections now cover bitwise `&`, shift/stream `
   included, so `_->name()` tracks `_.name()`.
 - **`&` unary is included** despite the address-of caveat (`&_` builds `x -> &x`, not the placeholder's
   address); it may mean something type-specific, per the same reasoning as `->`.
-- **Pending: bitwise `|` and `|=` vs compose.** `operator|` is composition, so bitwise `|` is absent —
-  but `|=` *is* included (a distinct token), which deliberately surfaces the asymmetry and forces the
-  eventual call: keep `|` = compose (and forgo bitwise `|`), or move compose to another spelling.
+- **Bitwise `|` is a plain section (resolved).** `|` used to be left-to-right compose (`f | g`), which
+  left bitwise `&` present but bitwise `|` absent — an asymmetry `|=` (a distinct token, always bitwise)
+  kept surfacing. Resolved in favour of symmetry: `|` is now an ordinary section (`_ | 4`, `_ | _`) just
+  like `&`, and general composition moved to `tacit::compose` (below). The trigger was the range-adaptor
+  verbs (`_.filter(_!=0).take(2)`, opt-in `TACIT_VIEWS`): once a *pipeline* reads as member chaining
+  through `_`, the pipe-shaped `|` had little left to do, so it went back to meaning bitwise-or. Nothing
+  is lost — member chaining still composes vocabulary, `tacit::compose` composes arbitrary closures —
+  and the ranges pipe is untouched (`nums | views::filter(_!=0)` has a range on the left, not an `fn`).
 - **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
+
+## Range-adaptor verbs (implemented, opt-in `TACIT_VIEWS`)
+
+A pipeline written point-free *through* `_`, so the dots sit on `_` rather than on the range:
+
+    _.filter(_ != 0).take(2)(nums)   ==   nums | views::filter(_ != 0) | views::take(2)
+
+The verbs (`filter take drop take_while drop_while reverse`) route through `std::views::*` — the same
+customization-point posture as `_.size()` going through `std::ranges::size` — and each returns an `fn`,
+so a pipeline is literally function composition of adaptors and the existing member-chaining machinery
+does the chaining for free. It sidesteps the "`std::vector` has no `.filter`" problem precisely because
+the vocabulary belongs to `_`, not the range; the range shows up only at the trailing `(nums)`, which
+also means the pipeline is a *reusable* closure (apply it to many ranges) where `nums | …` binds its
+range eagerly. Laziness is preserved end-to-end — `take` short-circuits an unbounded `iota` source.
+
+The load-bearing rule: a range-adaptor verb **binds its callable argument as a value**, it does not
+treat it as a projected blank. `is_slot_v` includes `fn`, so under the ordinary member rule
+`_.filter(_ != 0)` would read `_ != 0` as an extra input and build a two-input *section* — and sections
+carry no vocabulary, so `.take(2)` wouldn't even be reachable. Binding (not projecting) keeps the result
+a *unary* `fn` that chains. That makes range-adaptor verbs their own forwarder category (a predicate is
+a value that happens to be callable), sitting beside `TACIT_MEMBER` / `TACIT_CPO1` — the codebase
+already runs several forwarder kinds with different argument rules, so it's a new category, not an
+inconsistency. Two reasons it's gated rather than default: it's range-specific vocabulary that pulls in
+`<ranges>` semantics, and `transform` already means the optional/ranges monadic member — so `transform`
+is deliberately *absent* from the view table pending a precedence call (member vs view). A prototype
+(`view_verbs_probe.cpp`) proved the mechanism on g++-13 / clang-18 before it went in.
 
 ## Still on the table
 
-**Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`,
-always available), plus the opt-in `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` /
-`tacit::second` (behind `TACIT_COMBINATORS`). Each returns an `fn`, so results keep composing;
-`operator|` does not collide with the ranges pipe (its left operand is a range, not an `fn`).
-`f *** g` is just `first(f) | second(g)`.
+**Compose combinators** *(implemented)* — `tacit::compose(f, g, …)` (left-to-right compose,
+`x -> …(g(f(x)))`), plus `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` / `tacit::second`,
+all behind `TACIT_COMBINATORS`. Each returns an `fn`, so results keep composing. `compose` replaced the
+old `f | g` operator when `|` went back to being a bitwise section (see the operator surface note); the
+ranges pipe is unaffected (its left operand is a range, not an `fn`). `f *** g` is
+`compose(first(f), second(g))`.
 
 **Template-argument members** — `_.get<0>()`, `_.as<int>()`. After the hybrid these go into the
 *shared* vocabulary, so they would work on `_` and every projection at once. A template parameter pack
@@ -187,6 +219,16 @@ all verified on g++-13 / clang-18, fix its exact shape and are why it's off by d
 - *Variadic templates take one leading hole, portably.* `tuple<struct _, R...>` is legal at any arity,
   but interior holes (`tuple<int, struct _, char>`) are ill-formed (pack must be last) and a *second*
   leading-hole spec makes g++ (not clang) call it ambiguous — so: prefix hole, one at a time.
+- *Value-parameterized containers hole the type, the value rides.* `array` / `span` are `<class,
+  size_t>`; `array<struct _, 5>::with<int>` == `array<int, 5>`, with the extent `5` a plain literal in
+  a real template-id — no wrapper, because a non-type template argument is already a first-class thing
+  to write. That's the whole reason this stays natural: a *probe* (`value_param_probes.cpp`) confirmed
+  every value-parameterized template is also reachable through the general primitive — `<class, auto>`,
+  `<auto>`, even `integer_sequence`'s dependent `<class T, T...>` — but only by making the caller pick
+  a kind-matched `quote` *and* wrap each value as `val<5>`. Two visible taxes for the general case; the
+  natural type-hole grain pays neither, so it's the only value-param grain shipped. The mirror (holing
+  the *extent*, fixing the type) has no natural spelling — a type hole can't sit in a `size_t` slot —
+  and is intentionally absent; reach for a one-line metafunction if you must vary an extent.
 
 The politics: specializing a std class template for a hole type doesn't meet the original's
 requirements, so `[namespace.std]` makes it ill-formed *no diagnostic required* — it compiles and does
@@ -208,11 +250,13 @@ of `TACIT_VERBS`), since `::` demands a real member. Reflection (P2996) could op
 only through a `_::member<"name">`-style spelling or a splice, never `_::name` for an arbitrary name.
 
 `TACIT_NOUNS` is a plain comma list of nested-type names (`_::name::of<X>` == `X::name`). Nested-
-*template* projection — `_::name<A...>::of<X>` == `X::template name<A...>`, the rebind-style form the
-old block-shaped hook could also declare — is deliberately dropped from this simplified surface: a bare
-name list can't carry the template's own parameters, and the case is exotic enough (nothing in the std
-table needs it) that keeping a second hook shape earned less than the symmetry with `TACIT_VERBS`. It
-can return behind its own spelling if a real use appears.
+*template* projection — `_::name<A...>::of<X>` == `X::template name<A...>`, the rebind family — is its
+own hook, **`TACIT_NOUN_TEMPLATES`**, kept separate so `TACIT_NOUNS` stays a clean bare-name list. The
+split is inherent, not incidental: a bare name can't carry the template's own parameters, and a nested
+*template* isn't a type until you supply them (`_::rebound<char>` first, then `::of<X>`) — the same
+parameter-kind split that makes `bind` need `quote<F>`, surfacing on the projection side. Two lists
+rather than one is the price of that asymmetry; the common (nullary) case pays nothing for it, and
+nothing in the std table needs the templated form, so it stays opt-in and rarely reached for.
 
 ### The placeholder is always `_` (decision)
 
