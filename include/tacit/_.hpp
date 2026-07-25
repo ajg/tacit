@@ -36,36 +36,21 @@
 //  positional `_1`/`_2` sigils — reach for a named lambda the moment you need
 //  to reorder or reuse an argument).
 //
-//  DERIVE YOUR OWN.  The vocabulary-independent machinery (operator sections,
-//  application, the reflective hatch) lives in TACIT_CORE(Self). The shortest
-//  way to make a placeholder is TACIT_LIEUTENANT, which declares the type and
-//  its object in one statement:
+//  TEACH `_` YOUR OWN NAMES.  `_` is the one placeholder — there is no separate
+//  derived object. Domain names are added to `_` in place, pre-#defined before
+//  the include as bare comma lists: TACIT_VERBS (value-level member calls) and
+//  TACIT_NOUNS (type-level nested-type projections):
 //
-//      #define TACIT_KEEP_MACROS
+//      #define TACIT_VERBS deposit, balance, freeze
 //      #include <tacit/_.hpp>
-//      namespace bank {
-//        TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);   // type +
-//        object + your methods
-//      }
-//      // now:  ranges::sort(accounts, {}, bank::it.balance());
-//      bank::it.deposit(_)(acct, 100);
+//      using tacit::_;
+//      // now first-class on the same `_`:
+//      ranges::sort(accounts, {}, _.balance());
+//      _.deposit(_)(acct, 100);            // blanks work, as everywhere
 //
-//  Or write the struct yourself — one member per line, then the core (each line
-//  semicolon-clean):
-//
-//      struct teller {
-//        TACIT_MEMBER(deposit);              // one name per line (or
-//        TACIT_MEMBERS(a, b, c); ) TACIT_MEMBER(balance);
-//        TACIT_STD_MEMBERS(TACIT_MEMBER)     // and/or pull the whole std
-//        vocabulary (bulk, no ;) TACIT_CORE(teller);
-//      };
-//
-//  These need the generator macros, undefined by default (so a plain include
-//  exports only `_`);
-//  `#define TACIT_KEEP_MACROS` before including to keep them. To instead add
-//  names to the built-in
-//  `_`, pre-#define TACIT_EXTRA_MEMBERS(X) (no TACIT_KEEP_MACROS needed) — see
-//  below.
+//  Each verb becomes a member on `_` (and on its projections and the arrow
+//  proxy), guarded so a name a given type lacks is a clean SFINAE miss. Nouns are
+//  the type-level twin, reached as `_::name::of<X>`.
 //
 //  THREE LAYERS
 //    1. First-class vocabulary — generated from the curated tables (or your
@@ -81,9 +66,9 @@
 //  `_.size()` / `_.begin()` also work on C arrays, string views, and
 //  third-party ranges.
 //
-//  ON THE NAME.  "tacit" is point-free programming; "lieutenant" (French "lieu
-//  tenant" — literally "place-holding") is the general term for a placeholder and
-//  the derive macro TACIT_LIEUTENANT, sidestepping the loaded English word.
+//  ON THE NAME.  "tacit" is point-free programming; `_` is a "lieutenant" (French
+//  "lieu tenant" — literally "place-holding"), a stand-in, sidestepping the loaded
+//  English word "placeholder" (already spoken for by std::placeholders and `auto`).
 // ============================================================================================
 
 #include <array>
@@ -238,23 +223,18 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }                                                                                                \
   static_assert(true)
 
-//  Apply TACIT_MEMBER to a list (one name or many, up to 64). Semicolon-terminated and clean:
-//      TACIT_MEMBERS(deposit, balance, freeze);
-//      TACIT_LIEUTENANT(teller, it, deposit, balance);   // whole placeholder: type + instance
+//  Apply a forwarder macro M to a comma-separated list of names, each terminated with `;`. This is
+//  the engine behind the TACIT_VERBS / TACIT_NOUNS extension hooks: the same list is driven through a
+//  different forwarder for `_`, its projections (`fn`), and the arrow proxy. Empty list -> nothing.
+//  Handles up to 256 names via the classic recursive-rescan trick.
 #define TACIT_PARENS ()
 #define TACIT_EXPAND(...)   TACIT_EXPAND_C(TACIT_EXPAND_C(TACIT_EXPAND_C(TACIT_EXPAND_C(__VA_ARGS__))))
 #define TACIT_EXPAND_C(...) TACIT_EXPAND_B(TACIT_EXPAND_B(TACIT_EXPAND_B(TACIT_EXPAND_B(__VA_ARGS__))))
 #define TACIT_EXPAND_B(...) TACIT_EXPAND_A(TACIT_EXPAND_A(TACIT_EXPAND_A(TACIT_EXPAND_A(__VA_ARGS__))))
 #define TACIT_EXPAND_A(...) __VA_ARGS__
-#define TACIT_FE(a, ...) TACIT_MEMBER(a) __VA_OPT__(; TACIT_FE_AGAIN TACIT_PARENS (__VA_ARGS__))
+#define TACIT_FE(M, a, ...) M(a); __VA_OPT__(TACIT_FE_AGAIN TACIT_PARENS (M, __VA_ARGS__))
 #define TACIT_FE_AGAIN() TACIT_FE
-#define TACIT_MEMBERS(...) __VA_OPT__(TACIT_EXPAND(TACIT_FE(__VA_ARGS__)))
-#define TACIT_LIEUTENANT(Type, Obj, ...)                                                           \
-  struct Type {                                                                                    \
-    TACIT_MEMBERS(__VA_ARGS__) __VA_OPT__(;)                                                        \
-    TACIT_CORE(Type);                                                                              \
-  };                                                                                               \
-  inline constexpr Type Obj
+#define TACIT_FOR_EACH(M, ...) __VA_OPT__(TACIT_EXPAND(TACIT_FE(M, __VA_ARGS__)))
 
 //  Unary / binary customization-point forwarders (route through std::ranges niebloids).
 #define TACIT_CPO1(NAME, CPO)                                                                      \
@@ -432,27 +412,23 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   X(empty,  std::ranges::empty)  X(data,  std::ranges::data)
 // clang-format on
 
-// Additive extension hook for the default `_`: pre-#define this before
-// including to add your own first-class names (semicolon-separated, like the
-// table above), e.g.
-//   #define TACIT_EXTRA_MEMBERS(X) X(area); X(perimeter);
-#ifndef TACIT_EXTRA_MEMBERS
-#define TACIT_EXTRA_MEMBERS(X)
+// Additive extension hook for the one `_`: pre-#define a comma list of bare member-call names before
+// including, and each becomes a first-class *verb* on `_` — reachable as `_.name(...)`, composing and
+// blank-taking like the built-in vocabulary (`_.name(_)`), on `_` and its projections alike:
+//   #define TACIT_VERBS area, perimeter, scale
+// This is how you teach `_` a domain vocabulary — there is no separate placeholder object; `_` stays
+// the one interface. (Its type-level twin is TACIT_NOUNS, below.)
+#ifndef TACIT_VERBS
+#define TACIT_VERBS
 #endif
 
 // ------------------------------------------------------------------------------------------------
 //  Type-level projection vocabulary: the twin of the value-level member table above, but for types.
 //  Each entry is a metafunction living inside `struct _`, pulling a nested member out of a
-//  later-supplied type X and applied as `_::name::of<X>`. TACIT_TYPE_MEMBER projects a nested
-//  type/alias (`X::name`); TACIT_TYPE_TEMPLATE projects a nested template (`X::template name<A...>`),
-//  reached as `_::name<A...>::of<X>`. `of` is the applier (distinct from bind's hole-filling `with`).
+//  later-supplied type X and applied as `_::name::of<X>` — a nested type/alias (`X::name`). `of` is
+//  the applier (distinct from bind's hole-filling `with`).
 #define TACIT_TYPE_MEMBER(NAME)                                                                     \
   struct NAME { template <class X> using of = typename X::NAME; };                                  \
-  static_assert(true)
-#define TACIT_TYPE_TEMPLATE(NAME)                                                                   \
-  template <class... A> struct NAME {                                                               \
-    template <class X> using of = typename X::template NAME<A...>;                                  \
-  };                                                                                                \
   static_assert(true)
 
 // clang-format off
@@ -471,11 +447,11 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   /* meta    */ X(type);
 // clang-format on
 
-//  Additive extension hook for the type-level `_`: a raw block (so it can mix TACIT_TYPE_MEMBER and
-//  TACIT_TYPE_TEMPLATE), pre-#defined before including, e.g.
-//    #define TACIT_EXTRA_TYPE_MEMBERS TACIT_TYPE_MEMBER(shape_tag); TACIT_TYPE_TEMPLATE(rebind);
-#ifndef TACIT_EXTRA_TYPE_MEMBERS
-#define TACIT_EXTRA_TYPE_MEMBERS
+//  Additive extension hook for the type-level `_`: the twin of TACIT_VERBS, a comma list of bare
+//  nested-type names, each a first-class *noun* projected as `_.name` — reached as `_::name::of<X>`:
+//    #define TACIT_NOUNS shape_tag, payload_type
+#ifndef TACIT_NOUNS
+#define TACIT_NOUNS
 #endif
 
 // clang-format off
@@ -557,7 +533,7 @@ template <class F> struct fn {
              { return CPO(g(std::forward<X>(x))); }};                                              \
   }
   TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
-  TACIT_EXTRA_MEMBERS(TACIT_FN_MEMBER)
+  TACIT_FOR_EACH(TACIT_FN_MEMBER, TACIT_VERBS)
   TACIT_STD_CPOS1(TACIT_FN_CPO1)
 #undef TACIT_FN_MEMBER
 #undef TACIT_FN_CPO1
@@ -577,23 +553,23 @@ struct arrow {
   TACIT_ARROW_MEMBER(cend);   TACIT_ARROW_MEMBER(rbegin); TACIT_ARROW_MEMBER(rend);
   TACIT_ARROW_MEMBER(size);   TACIT_ARROW_MEMBER(ssize);  TACIT_ARROW_MEMBER(empty);
   TACIT_ARROW_MEMBER(data);
-  TACIT_EXTRA_MEMBERS(TACIT_ARROW_MEMBER)
+  TACIT_FOR_EACH(TACIT_ARROW_MEMBER, TACIT_VERBS)
 };
 inline constexpr arrow arrow_v;
 } // namespace detail
 
 // The one type `_`: the placeholder's own type. It carries the full std vocabulary (plus any
-// TACIT_EXTRA_MEMBERS) and the core for the value side, and doubles as the type-level `_` — a blank
+// TACIT_VERBS / TACIT_NOUNS) and the core for the value side, and doubles as the type-level `_` — a blank
 // for `bind` and a projection namespace (`_::name::of<X>`). The value `_` (next) hides the type in
 // ordinary lookup, but a name before `::` is looked up considering only types, namespaces, and
 // templates, so `_::name` reaches this struct past the value; elsewhere reach the type via `struct _`.
 struct _ {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
-  TACIT_EXTRA_MEMBERS(TACIT_MEMBER)
+  TACIT_FOR_EACH(TACIT_MEMBER, TACIT_VERBS)
   TACIT_STD_CPOS1(TACIT_CPO1)
   TACIT_CPO2(swap, std::ranges::swap)
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
-  TACIT_EXTRA_TYPE_MEMBERS
+  TACIT_FOR_EACH(TACIT_TYPE_MEMBER, TACIT_NOUNS)
   [[nodiscard]] constexpr const detail::arrow* operator->() const { return &detail::arrow_v; }
   TACIT_CORE(_);
 };
@@ -635,7 +611,7 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 // The dual of bind is projection: where bind wraps the hole in an *outer* template, `_::name::of<X>`
 // pulls a *member* out of X — the type-level twin of the value-level member vocabulary. It is a
 // closed vocabulary (each name is declared in `struct _`, table above; add your own via
-// TACIT_EXTRA_TYPE_MEMBERS), applied with `::of` since there is no `operator()` at the type level:
+// TACIT_NOUNS), applied with `::of` since there is no `operator()` at the type level:
 //
 //   _::value_type::of<std::vector<int>>     // int
 //   _::mapped_type::of<std::map<int, char>> // char
@@ -819,18 +795,16 @@ public:
 using tacit::_;
 #endif
 
-// The default path exports exactly one name, `tacit::_`; a single `using
-// tacit::_;` (or the opt-in above) is all a caller needs — the vocabulary is
-// reached through the object and the operator sections are hidden friends found
-// by ADL. To keep that promise the generator macros are undefined below. To
-// derive your own placeholder, `#define TACIT_KEEP_MACROS` before including;
-// the TACIT_MEMBER / TACIT_CORE / TACIT_STD_MEMBERS macros then stay available.
+// The default path exports exactly one name, `tacit::_`; a single `using tacit::_;` (or the opt-in
+// above) is all a caller needs — the vocabulary is reached through the object and the operator
+// sections are hidden friends found by ADL. `_` is the only placeholder: domain names are taught to it
+// in place with the pre-#define TACIT_VERBS / TACIT_NOUNS hooks (consumed above, at include time), so
+// nothing downstream needs the internal generator macros — the header always cleans them up here, one
+// path, no TACIT_KEEP_MACROS switch.
 //
-// One macro is kept on the clean path: `TACIT_HAS_REFLECTION`, a feature flag
-// (not a generator), so you can `#if` on whether the reflective members (m /
-// field / enum_name / each_field) exist; testing that yourself would otherwise
-// mean re-deriving tacit's `__cpp_*` condition.
-#ifndef TACIT_KEEP_MACROS
+// One macro survives on the clean path: `TACIT_HAS_REFLECTION`, a feature flag (not a generator), so
+// you can `#if` on whether the reflective members (m / field / enum_name / each_field) exist; testing
+// that yourself would otherwise mean re-deriving tacit's `__cpp_*` condition.
 #undef TACIT_MEMBER
 #undef TACIT_ARROW_MEMBER
 #undef TACIT_CPO1
@@ -843,18 +817,15 @@ using tacit::_;
 #undef TACIT_CORE
 #undef TACIT_STD_MEMBERS
 #undef TACIT_STD_CPOS1
-#undef TACIT_MEMBERS
-#undef TACIT_LIEUTENANT
 #undef TACIT_TYPE_MEMBER
-#undef TACIT_TYPE_TEMPLATE
 #undef TACIT_STD_TYPE_MEMBERS
 #undef TACIT_FE
 #undef TACIT_FE_AGAIN
+#undef TACIT_FOR_EACH
 #undef TACIT_PARENS
 #undef TACIT_EXPAND
 #undef TACIT_EXPAND_A
 #undef TACIT_EXPAND_B
 #undef TACIT_EXPAND_C
-#undef TACIT_EXTRA_MEMBERS
-#undef TACIT_EXTRA_TYPE_MEMBERS
-#endif
+#undef TACIT_VERBS
+#undef TACIT_NOUNS

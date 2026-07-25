@@ -122,7 +122,8 @@ Beyond comparison/arithmetic, the sections now cover bitwise `&`, shift/stream `
   and single-blank (`operator=` must be a member; `_ = _` falls to the deleted copy-assign).
 - **`->` is a real arrow, not `(*_).`** — `operator->` returns an `arrow` proxy whose vocabulary
   forwards through `x->name()`, using the pointee's actual `operator->` (which a type may define
-  independently of, or without, unary `*`). Shipped for the default `_` only (not derived placeholders).
+  independently of, or without, unary `*`). The arrow proxy carries the same vocabulary as `_`, verbs
+  included, so `_->name()` tracks `_.name()`.
 - **`&` unary is included** despite the address-of caveat (`&_` builds `x -> &x`, not the placeholder's
   address); it may mean something type-specific, per the same reasoning as `->`.
 - **Pending: bitwise `|` and `|=` vs compose.** `operator|` is composition, so bitwise `|` is absent —
@@ -199,14 +200,36 @@ surface, and Tier 1 is opt-in for those who want the natural read and accept the
 == `int`), the type-level twin of the value-level member vocabulary. It works because a name before
 `::` is looked up considering only types, namespaces, and templates ([basic.lookup.qual]), so `_::name`
 reaches `struct _` past the value that hides it — `_` now serves as value placeholder, bind blank, and
-projection namespace under one symbol. Three constraints, all inherent rather than incidental: there is
+projection namespace under one symbol. Two constraints, both inherent rather than incidental: there is
 no `operator()` at the type level, so a projection is *applied* with `::of<X>` (or by nesting, or a
-`transform`), never called — the deep asymmetry with value-level `_.foo()`; the vocabulary is closed
-(each name is declared in `struct _`, extend via `TACIT_EXTRA_TYPE_MEMBERS`), since `::` demands a real
-member; and it inherits `bind`'s parameter-kind split — nested *templates* need a separate
-`TACIT_TYPE_TEMPLATE` entry, reached as `_::name<A...>::of<X>`. Reflection (P2996) could open the
-vocabulary, but only through a `_::member<"name">`-style spelling or a splice, never `_::name` for an
-arbitrary name.
+`transform`), never called — the deep asymmetry with value-level `_.foo()`; and the vocabulary is
+closed (each name is declared in `struct _`; teach it your own with `TACIT_NOUNS`, the type-level twin
+of `TACIT_VERBS`), since `::` demands a real member. Reflection (P2996) could open the vocabulary, but
+only through a `_::member<"name">`-style spelling or a splice, never `_::name` for an arbitrary name.
+
+`TACIT_NOUNS` is a plain comma list of nested-type names (`_::name::of<X>` == `X::name`). Nested-
+*template* projection — `_::name<A...>::of<X>` == `X::template name<A...>`, the rebind-style form the
+old block-shaped hook could also declare — is deliberately dropped from this simplified surface: a bare
+name list can't carry the template's own parameters, and the case is exotic enough (nothing in the std
+table needs it) that keeping a second hook shape earned less than the symmetry with `TACIT_VERBS`. It
+can return behind its own spelling if a real use appears.
+
+### The placeholder is always `_` (decision)
+
+An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
+a `bank::it` with its own vocabulary. That's gone. The whole appeal of `_` is that it's the one
+interface; a second object like `bank::it.deposit(_)` splits the reader's attention between two spellings
+of the same idea and reads as opaque. So there is exactly one placeholder, and domain names extend *it*,
+in place, via `TACIT_VERBS` / `TACIT_NOUNS`.
+
+This is a forced consequence, not just taste: `_.deposit(…)` needs `deposit` to be a member of `_`'s
+type, and a class's members can only be declared at its definition — so a single `_` *must* gain its
+verbs at include time from a pre-`#define`, and a genuinely separate/namespaced/restricted vocabulary is
+exactly the thing only a separate type could provide. Giving that up is the price of "one `_`", and it's
+the price this design chooses to pay. The removal also let the whole `TACIT_KEEP_MACROS` switch go: with
+no derive-your-own path, nothing downstream needs the internal generator macros, so the header always
+cleans them up — one include path, no knobs. (The pre-C++26 need to pre-register names is what
+`_.m<"deposit">(…)` escapes on a reflection toolchain; see the reflective hatch.)
 
 **Adoption / packaging** *(in progress)* — added `install()` + a generated `tacitConfig.cmake` so
 `find_package(tacit)` and FetchContent work, and a `TACIT_VERSION` macro. Still worth doing: a Godbolt

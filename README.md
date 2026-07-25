@@ -117,57 +117,41 @@ std::vector<std::function<void()>> thunks{ []{}, []{} };
 std::ranges::for_each(thunks, _());  // invoke each nullary callable
 ```
 
-## Derive your own placeholder
+## Teach `_` your own names
 
-The vocabulary-independent machinery (operator sections, application, reflection) lives in
-`TACIT_CORE(Self)`. The shortest way to make a placeholder is `TACIT_LIEUTENANT`, which declares the
-type and its object in one statement. Opt into keeping the generator macros with `TACIT_KEEP_MACROS`
-before including:
+`_` is the only placeholder — there is no separate derived object to learn or spell. To hand it a
+domain vocabulary, pre-`#define` **`TACIT_VERBS`** (a comma list of member-call names) before the
+include, and each name becomes first-class on the same `_`:
 
 ```cpp
-#define TACIT_KEEP_MACROS
+#define TACIT_VERBS deposit, balance, freeze
 #include <tacit/_.hpp>
 #include <algorithm>
 using tacit::_;
 using namespace std::ranges;
 
-namespace bank {
-TACIT_LIEUTENANT(teller, it, deposit, balance, freeze);
-}
-
-sort(accounts, {}, bank::it.balance());
-bank::it.deposit(_)(account, 100);   // blanks work in derived placeholders too
+sort(accounts, {}, _.balance());     // _.balance() is now first-class on _
+_.deposit(_)(account, 100);          // blanks work, exactly as with the built-in vocabulary
+count_if(accounts, _.frozen());      // ... and a verb reaches _'s projections and _-> too
 ```
 
-Need more control — hand-written members, or the whole std vocabulary? Write the struct yourself:
-one member per line (or `TACIT_MEMBERS(a, b, c);` for a compact list), and/or
-`TACIT_STD_MEMBERS(TACIT_MEMBER)` to pull the whole vocabulary, then drop in `TACIT_CORE(Self)`:
+Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a hard
+error — a domain verb sits safely alongside the standard vocabulary. The same list also lands on `_`'s
+composable projections (`_.balance() < _.balance()`) and on the arrow proxy (`_->balance()`), so a
+verb behaves everywhere the built-in names do.
+
+Its type-level twin is **`TACIT_NOUNS`** — a comma list of nested-type names, each projected as
+`_::name::of<X>` (see [Type-level `_`](#type-level-_-experimental)):
 
 ```cpp
-namespace bank {
-struct teller {
-  TACIT_MEMBER(deposit);   // one line per member, one semicolon per line
-  TACIT_MEMBER(balance);
-  TACIT_MEMBER(freeze);
-  TACIT_CORE(teller);
-};
-inline constexpr teller it;
-}
-```
-
-To add names to the built-in `_` instead of deriving a new placeholder, pre-`#define`
-`TACIT_EXTRA_MEMBERS` before the include (it only ever *adds* to the std vocabulary — and needs no
-`TACIT_KEEP_MACROS`):
-
-```cpp
-#define TACIT_EXTRA_MEMBERS(X) X(area); X(perimeter);
+#define TACIT_NOUNS payload_type, shape_tag
 #include <tacit/_.hpp>
 using tacit::_;
 
-std::ranges::sort(shapes, {}, _.area());   // _.area() is now first-class on _
+using P = _::payload_type::of<Message>;   // == Message::payload_type
 ```
 
-Blank detection is trait-based, so `_` is recognised as a blank in any placeholder's arguments.
+Blank detection is trait-based, so `_` is recognised as a blank in any argument position.
 
 ## Reflective hatch (C++26)
 
@@ -192,12 +176,12 @@ import tacit;
 using tacit::_;
 ```
 
-Macros don't cross a module boundary, so the derive generators (`TACIT_LIEUTENANT`, `TACIT_CORE`, …)
-stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to derive your own
-(just as `import std;` exports no macros). For the same reason `TACIT_COMBINATORS` can't be switched
-on from the consumer side; build the interface with `-DTACIT_COMBINATORS` to have it export the
-combinators too. Verified on clang; GCC's `-fmodules-ts` isn't reliable for this pattern yet, so
-prefer `#include` there.
+Macros don't cross a module boundary, so the extension hooks (`TACIT_VERBS`, `TACIT_NOUNS`) are
+consumed at include time and stay with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`,
+`#include` to teach it your own names (just as `import std;` exports no macros). For the same reason
+`TACIT_COMBINATORS` can't be switched on from the consumer side; build the interface with
+`-DTACIT_COMBINATORS` to have it export the combinators too. Verified on clang; GCC's `-fmodules-ts`
+isn't reliable for this pattern yet, so prefer `#include` there.
 
 ## Type-level `_` (experimental)
 
@@ -245,9 +229,8 @@ ctest --test-dir build --output-on-failure
 
 ## On the name
 
-`tacit` names the paradigm (point-free / tacit programming). `_`'s own type is just `tacit::_`; the
-evocative name — French *lieu tenant*, literally "place-holder," a stand-in — lives on in the
-`TACIT_LIEUTENANT` derive macro, while
+`tacit` names the paradigm (point-free / tacit programming). `_`'s own type is just `tacit::_`; `_`
+itself is the *lieutenant* — French *lieu tenant*, literally "place-holding," a stand-in —
 sidestepping the loaded English word "placeholder" (already spoken for by `std::placeholders` and by
 the grammar term *placeholder type specifier* for `auto`); the irony is not lost entirely that
 point-free style almost necessarily involves more points in the literal sense (periods/dots),
