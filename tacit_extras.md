@@ -2,7 +2,8 @@
 
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
-opt-in type-level `tacit::bind`; the free-function combinators are gated behind `TACIT_COMBINATORS`.
+opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote`; the free-function combinators are
+gated behind `TACIT_COMBINATORS`, and the natural-spelling std holes behind `TACIT_STD_HOLES`.
 Everything here is either already in `<tacit/_.hpp>` or a candidate for it.
 
 ## Composition (implemented)
@@ -147,6 +148,51 @@ template. `_` reuses its own identifier at the type level via the elaborated `st
 trick: a class and a variable can share a name), so the blank is `struct _` and fixed args stay plain
 types — `bind<std::map, int, struct _>::with<double>` == `std::map<int, double>`. A P2996 build can
 generalize substitution to alias templates / non-type params via `std::meta::substitute` (gated hook).
+
+**Type-level: one primitive that curries both grains** *(implemented)* — `bind<F, args...>` fixes the
+class template `F` and holes among its *arguments*; it cannot hole the template itself. `apply` closes
+that gap with a single op. Quote a template into a type — `quote<F>` — so it can occupy a slot next to
+ordinary type args, then `apply<Slots...>::with<Fills...>` fills each `struct _` slot (template *or*
+argument) left to right:
+
+    apply<quote<std::map>, struct _, struct _>::with<int, char>   // std::map<int,char>  (fix template)
+    apply<struct _, int, char>::with<quote<std::map>>             // std::map<int,char>  (fix args)
+    apply<struct _, int, struct _>::with<quote<std::map>, char>   // std::map<int,char>  (hole both)
+
+So `bind<F, A...>::with<X...>` is exactly `apply<quote<F>, A...>::with<X...>` — `bind` is the
+template-pinned special case, kept as the ergonomic spelling; `apply` is the general fallback and the
+only one that spells the arg-first grain. The `quote<>` wrapper is the tax C++'s single-kind parameter
+packs impose (a template can't sit in a type slot unquoted); a C++26 reflection build erases it, since
+templates and types both become `std::meta::info` and the slot list stops needing the wrapper. Naming
+(`apply` / `quote`) is provisional — the mechanism is what's settled, not the spelling.
+
+**Type-level: natural spelling via std holes** *(implemented, gated `TACIT_STD_HOLES`, experimental)* —
+the sugar tier: `std::map<struct _, int>::with<char>` reading as itself, no `quote`/`apply` ceremony.
+It works by injecting partial specializations of common containers (`vector`, `set`, `map`, `pair`,
+`tuple`) into `namespace std`, each keyed on the hole type and exposing a `::with<...>`. Four facts,
+all verified on g++-13 / clang-18, fix its exact shape and are why it's off by default:
+
+- *The hole must be elaborated.* A template argument names the value `_` first, so a bare `_` is a
+  non-type argument where a type is wanted; the specializations key on `struct ::tacit::_` (and callers
+  write `std::map<struct _, int>`), the same tag-namespace trick `bind` already leans on.
+- *Explicit arity, not a trailing pack.* A trailing `...` is not "more specialized" than a fixed-arity
+  primary, so the defaulted `Compare`/`Allocator` params can't hide behind a pack — each shape is a
+  SHAPE macro (`SPEC_1_1` / `SPEC_1_2` / `SPEC_2_2`) that names them. One macro per (fillable, trailing)
+  shape plus a short table; medium curation weight.
+- *Reconstruct fresh defaults.* `map<struct _, T, C, A>::with<K>` yields `map<K, T>`, **not**
+  `map<K, T, C, A>` — carrying the hole-derived `less<hole>` / `allocator<…hole…>` along silently
+  poisons the result (`is_same` fails). The price: you can't thread an explicit non-default
+  Compare/Allocator through a hole; drop to `apply`/`bind` for that.
+- *Variadic templates take one leading hole, portably.* `tuple<struct _, R...>` is legal at any arity,
+  but interior holes (`tuple<int, struct _, char>`) are ill-formed (pack must be last) and a *second*
+  leading-hole spec makes g++ (not clang) call it ambiguous — so: prefix hole, one at a time.
+
+The politics: specializing a std class template for a hole type doesn't meet the original's
+requirements, so `[namespace.std]` makes it ill-formed *no diagnostic required* — it compiles and does
+the right thing on tested toolchains, but it's a spelling convenience, not a standards guarantee (the
+`std::hash`-for-your-type precedent covers "specialize for your type," not "specialize into something
+that isn't the thing"). Hence the gate: off by default, `apply`/`bind` is the portable always-on
+surface, and Tier 1 is opt-in for those who want the natural read and accept the caveat.
 
 **Type-level projection** *(implemented)* — the dual of `bind`: where `bind` wraps the hole in an
 *outer* template, `_::name::of<X>` pulls a nested member *out* of X (`_::value_type::of<vector<int>>`

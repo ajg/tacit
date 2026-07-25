@@ -185,7 +185,7 @@ path) lets you `#if` on whether they exist.
 ## Modules
 
 `import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
-and re-exports `_` and the type-level `bind`:
+and re-exports `_` and the type-level `bind` / `apply` / `quote`:
 
 ```cpp
 import tacit;
@@ -201,10 +201,15 @@ prefer `#include` there.
 
 ## Type-level `_` (experimental)
 
-The same `_` does double duty at the *type* level — it's a hole for partially applying a class template
-and a projection namespace for pulling nested members out of a type. That surface is unstable and left
-undocumented here on purpose while it settles; see [`tacit_extras.md`](tacit_extras.md) if you're
-curious, and the `typelevel` / `typeproject` tests for what works today.
+The same `_` does double duty at the *type* level — a hole for partially applying a class template and
+a projection namespace for pulling nested members out of a type. `bind<F, args…>::with<Xs…>` fixes the
+template and fills its holed arguments; `apply<Slots…>::with<Fills…>` generalizes to holing the
+*template itself* (quote it with `quote<F>`), so it curries both grains under one op. An experimental
+`#define TACIT_STD_HOLES` adds the natural spelling — `std::map<struct _, int>::with<char>` — by
+injecting specializations into `namespace std` (off by default; it's a convenience, not a standards
+guarantee). That whole surface is unstable and left undocumented in detail here on purpose while it
+settles; see [`tacit_extras.md`](tacit_extras.md), and the `typelevel` / `typeproject` / `typeapply`
+tests for what works today.
 
 ## Build & test
 

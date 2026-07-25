@@ -661,6 +661,44 @@ template <template <class...> class F, class... Args> struct bind {
   using with = typename detail::fill_slots<F, std::tuple<>, std::tuple<Xs...>, Args...>::type;
 };
 
+// The general primitive that subsumes `bind` and curries BOTH grains under one op. `bind` fixes the
+// template and holes among its *arguments*; `apply` additionally lets the *template itself* be a hole.
+// Quote a template into a type with `quote<F>` (a template can't sit in a type slot unquoted — packs
+// are single-kind), then `apply<Slots...>::with<Fills...>` fills each `struct _` slot — template or
+// argument — left to right:
+//
+//   apply<quote<std::map>, struct _, struct _>::with<int, char>   // std::map<int,char>  (fix template)
+//   apply<struct _, int, char>::with<quote<std::map>>             // std::map<int,char>  (fix args)
+//   apply<struct _, int, struct _>::with<quote<std::map>, char>   // std::map<int,char>  (hole both)
+//
+// So `bind<F, A...>::with<X...>` is `apply<quote<F>, A...>::with<X...>`; the arg-first grain is the
+// mirror the plain `bind` can't spell. A C++26 reflection build would erase `quote<>` — templates and
+// types both become std::meta::info, so the slot list stops needing the wrapper. (Naming provisional.)
+template <template <class...> class F> struct quote {};
+namespace detail {
+template <class... Applied> struct run_slots; // first Applied slot must resolve to a quote<F>
+template <template <class...> class F, class... A>
+struct run_slots<quote<F>, A...> {
+  using type = F<A...>;
+};
+template <class Acc, class Fills, class... Slots> struct apply_slots;
+template <class... Acc, class Fills>
+struct apply_slots<std::tuple<Acc...>, Fills> {
+  using type = typename run_slots<Acc...>::type;
+};
+template <class... Acc, class X, class... Xr, class... S>
+struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, blank, S...>
+    : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
+template <class... Acc, class Fills, class S0, class... S>
+struct apply_slots<std::tuple<Acc...>, Fills, S0, S...>
+    : apply_slots<std::tuple<Acc..., S0>, Fills, S...> {};
+} // namespace detail
+
+template <class... Slots> struct apply {
+  template <class... Fills>
+  using with = typename detail::apply_slots<std::tuple<>, std::tuple<Fills...>, Slots...>::type;
+};
+
 #if TACIT_HAS_REFLECTION
 // C++26 extension point: with a P2996 toolchain, std::meta::substitute generalizes this to alias
 // templates and non-type template parameters that a template-template parameter cannot name. Left a
@@ -699,6 +737,79 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 #endif // TACIT_COMBINATORS
 
 } // namespace tacit
+
+// ------------------------------------------------------------------------------------------------
+// Tier 1 (experimental, opt-in): natural-spelling type-level holes, `std::map<struct _, int>::with<char>`.
+// Injects partial specializations of common std containers into `namespace std`, keyed on the hole
+// type `tacit::_`, each exposing a `::with<...>` that reconstructs the container with the hole filled.
+//
+// This is deliberately gated behind TACIT_STD_HOLES and OFF by default: a specialization of a std
+// class template for `tacit::_` does not meet the original template's requirements (a hole is not a
+// key/value/allocator), so per [namespace.std] it is technically ill-formed (no diagnostic required) —
+// it works on the tested toolchains, but it is a spelling convenience, not a standards guarantee. The
+// portable, always-on surface is `tacit::apply` / `tacit::bind` above. Notes on the shape:
+//   - A trailing pack is not "more specialized" than a fixed-arity primary, so the defaulted
+//     Compare/Allocator params can't hide behind `...`; each SHAPE macro names them explicitly.
+//   - `::with` reconstructs FRESH defaults (map<K,T>, not map<K,T,C,A>): carrying the hole-derived
+//     less<hole>/allocator<...hole...> along would silently poison the result. Cost: you can't thread
+//     an explicit non-default Compare/Allocator through a hole (drop to `apply`/`bind` for that).
+//   - `tuple` is variadic: a single LEADING hole + trailing pack is legal at any arity and portable;
+//     interior holes and multiple leading-hole specs are not (see tacit_extras.md).
+#ifdef TACIT_STD_HOLES
+#include <map>
+#include <set>
+#include <tuple>
+#include <utility>
+#include <vector>
+namespace std {
+#define TACIT_HOLE struct ::tacit::_ // elaborated: force type lookup past the shadowing value `_`
+#define TACIT_SPEC_1_1(F)                                                                          \
+  template <class A0> class F<TACIT_HOLE, A0> {                                                     \
+  public:                                                                                           \
+    template <class X> using with = F<X>;                                                           \
+  };
+#define TACIT_SPEC_1_2(F)                                                                          \
+  template <class C, class A0> class F<TACIT_HOLE, C, A0> {                                         \
+  public:                                                                                           \
+    template <class X> using with = F<X>;                                                           \
+  };
+#define TACIT_SPEC_2_2(F)                                                                          \
+  template <class T, class C, class A0> class F<TACIT_HOLE, T, C, A0> {                             \
+  public:                                                                                           \
+    template <class K> using with = F<K, T>;                                                        \
+  };                                                                                                \
+  template <class K, class C, class A0> class F<K, TACIT_HOLE, C, A0> {                             \
+  public:                                                                                           \
+    template <class V> using with = F<K, V>;                                                        \
+  };                                                                                                \
+  template <class C, class A0> class F<TACIT_HOLE, TACIT_HOLE, C, A0> {                             \
+  public:                                                                                           \
+    template <class K, class V> using with = F<K, V>;                                               \
+  };
+TACIT_SPEC_1_1(vector)
+TACIT_SPEC_1_2(set)
+TACIT_SPEC_2_2(map)
+#undef TACIT_SPEC_1_1
+#undef TACIT_SPEC_1_2
+#undef TACIT_SPEC_2_2
+// pair: two type params, no defaults — by hand.
+template <class B> struct pair<TACIT_HOLE, B> {
+  template <class X> using with = pair<X, B>;
+};
+template <class A0> struct pair<A0, TACIT_HOLE> {
+  template <class Y> using with = pair<A0, Y>;
+};
+template <> struct pair<TACIT_HOLE, TACIT_HOLE> {
+  template <class X, class Y> using with = pair<X, Y>;
+};
+// tuple: variadic, single leading hole + trailing pack — legal at any arity, portable.
+template <class... R> class tuple<TACIT_HOLE, R...> {
+public:
+  template <class X> using with = tuple<X, R...>;
+};
+#undef TACIT_HOLE
+} // namespace std
+#endif // TACIT_STD_HOLES
 
 // Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>`
 // alone suffices (no `using tacit::_;`). Off by default — a header must not
