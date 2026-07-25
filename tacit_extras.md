@@ -104,6 +104,31 @@ astonishment: a Haskeller reading C++ `$` expects apply-glue and would find bind
 shouldn't be sold as "C++'s `$`". Net: parked, not adopted — a live option for the "two symbols" world,
 priced in portability, to weigh against staying macro-gated at one.
 
+## Operator surface (implemented)
+
+Beyond comparison/arithmetic, the sections now cover bitwise `&`, shift/stream `<< >>`, logical
+`&& ||`; the unary operators `* - + ! ~ &` and `++ --` (pre/post); assignment `=` and compound
+`+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
+
+- **`&&` / `||` are two-input combiners in the two-blank form** (`_ && _` == `(a,b) -> a && b`), like
+  `_.size() < _.size()`. Short-circuit is preserved (it lives in the generated body) but there is no
+  one-input "both predicates on x" — that's the distinct-blank stance; reach for a lambda.
+- **Streaming binds the left operand by reference.** `os << _` can't copy the stream, so the `X op _`
+  section captures a non-copy-constructible left operand by reference (copyable ones stay by value, so
+  `2 - _` is unchanged). Enables `for_each(v, std::cout << _)`.
+- **Assignment mutates by reference.** The argument binds by forwarding reference, so `_ = 0` / `_ += 1`
+  update the caller's lvalue in place (`reference_wrapper` unnecessary, and would misbehave). Left-only
+  and single-blank (`operator=` must be a member; `_ = _` falls to the deleted copy-assign).
+- **`->` is a real arrow, not `(*_).`** — `operator->` returns an `arrow` proxy whose vocabulary
+  forwards through `x->name()`, using the pointee's actual `operator->` (which a type may define
+  independently of, or without, unary `*`). Shipped for the default `_` only (not derived placeholders).
+- **`&` unary is included** despite the address-of caveat (`&_` builds `x -> &x`, not the placeholder's
+  address); it may mean something type-specific, per the same reasoning as `->`.
+- **Pending: bitwise `|` and `|=` vs compose.** `operator|` is composition, so bitwise `|` is absent —
+  but `|=` *is* included (a distinct token), which deliberately surfaces the asymmetry and forces the
+  eventual call: keep `|` = compose (and forgo bitwise `|`), or move compose to another spelling.
+- **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
+
 ## Still on the table
 
 **Compose combinators** *(implemented)* — `f | g` (left-to-right compose, an `operator|` on `fn`,

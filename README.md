@@ -65,8 +65,15 @@ A blank can also *project*: an `fn` in argument position applies its projection 
 
 ### Operator sections
 
-The comparison and arithmetic operators are finite and lexical: `_ == y`, `x + _`, `_ + _` all build
-the obvious closure.
+The comparison, arithmetic, bitwise, shift, and logical operators are finite and lexical: `_ == y`,
+`x + _`, `_ + _` all build the obvious closure (a one-sided form is unary; `_ op _` is a two-input
+combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `-_`, `!_`, `~_`,
+`*_` (deref), `++_` — as does streaming (`os << _`, so `for_each(v, std::cout << _)`) and member access
+through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
+
+Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
+bind the argument by reference, so `std::ranges::for_each(v, _ += 1)` updates `v` in place. (`operator|`
+stays composition, so bitwise `|` is intentionally absent — see the design notes.)
 
 ### Composition
 

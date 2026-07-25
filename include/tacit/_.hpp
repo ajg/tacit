@@ -225,6 +225,19 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }                                                                                                \
   static_assert(true)
 
+//  Arrow-member forwarder: the twin of TACIT_MEMBER but through `->`, so `_->NAME(args)` builds
+//  x -> x->NAME(args) (the pointee's member, via the real operator->). Lives on the `arrow` proxy
+//  that `_`'s operator-> hands back. No projected-blank path — a plain call forwarder.
+#define TACIT_ARROW_MEMBER(NAME)                                                                   \
+  template <class... A>                                                                            \
+  [[nodiscard]] static constexpr auto NAME(A&&... a) {                                             \
+    return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)         \
+             requires requires(X&& xx, A&&... aa) {                                                 \
+               std::forward<X>(xx)->NAME(std::forward<A>(aa)...);                                   \
+             } { return std::forward<X>(x)->NAME(a...); }};                                         \
+  }                                                                                                \
+  static_assert(true)
+
 //  Apply TACIT_MEMBER to a list (one name or many, up to 64). Semicolon-terminated and clean:
 //      TACIT_MEMBERS(deposit, balance, freeze);
 //      TACIT_LIEUTENANT(teller, it, deposit, balance);   // whole placeholder: type + instance
@@ -264,12 +277,39 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
              { return std::forward<decltype(x)>(x) op y; }};                                       \
   }                                                                                                \
   template <class X> requires tacit::detail::not_fn<X> [[nodiscard]] friend constexpr auto operator op(X&& x, self) { \
-    return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                  \
-             { return x op std::forward<decltype(y)>(y); }};                                       \
+    if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                             \
+      return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                 \
+               { return x op std::forward<decltype(y)>(y); }};                                      \
+    else /* non-copyable left operand (e.g. a stream): bind by reference so `os << _` works */      \
+      return tacit::detail::fn{[&x](auto&& y) -> decltype(auto)                                     \
+               { return x op std::forward<decltype(y)>(y); }};                                      \
   }                                                                                                \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                    \
     return [](auto&& x, auto&& y) -> decltype(auto)                                                \
              { return std::forward<decltype(x)>(x) op std::forward<decltype(y)>(y); };             \
+  }
+
+//  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
+//  differ by arity. `&_` builds `x -> &x`, not the placeholder's address (use std::addressof if ever
+//  needed); overloading unary `&` is the one to keep in mind.
+#define TACIT_UNARY(op)                                                                            \
+  [[nodiscard]] friend constexpr auto operator op(self) {                                           \
+    return tacit::detail::fn{[](auto&& x) -> decltype(auto)                                         \
+             { return op std::forward<decltype(x)>(x); }};                                          \
+  }
+//  Postfix form (the trailing int disambiguates), for ++ / --.
+#define TACIT_UNARY_POST(op)                                                                       \
+  [[nodiscard]] friend constexpr auto operator op(self, int) {                                      \
+    return tacit::detail::fn{[](auto&& x) -> decltype(auto)                                         \
+             { return std::forward<decltype(x)>(x) op; }};                                          \
+  }
+//  One compound-assignment section: `_ op y` == x -> (x op y). Mutating and left-operand-only (there
+//  is no `y op _` form — that would assign into y). The argument binds by reference, so it mutates
+//  the caller's lvalue: e.g. std::ranges::for_each(v, _ += 1).
+#define TACIT_ASSIGN(op)                                                                            \
+  template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator op(self, Y&& y) { \
+    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                   \
+             { return std::forward<decltype(x)>(x) op y; }};                                         \
   }
 
 //  Reflective members (defined empty when reflection is off, so TACIT_CORE need not branch).
@@ -328,6 +368,17 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   TACIT_SECTION(==) TACIT_SECTION(!=) TACIT_SECTION(<) TACIT_SECTION(>)                            \
   TACIT_SECTION(<=) TACIT_SECTION(>=) TACIT_SECTION(+) TACIT_SECTION(-)                            \
   TACIT_SECTION(*) TACIT_SECTION(/) TACIT_SECTION(%) TACIT_SECTION(^)                              \
+  TACIT_SECTION(&) TACIT_SECTION(&&) TACIT_SECTION(||) TACIT_SECTION(<<) TACIT_SECTION(>>)         \
+  TACIT_UNARY(*) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~) TACIT_UNARY(&)        \
+  TACIT_UNARY(++) TACIT_UNARY(--) TACIT_UNARY_POST(++) TACIT_UNARY_POST(--)                        \
+  TACIT_ASSIGN(+=) TACIT_ASSIGN(-=) TACIT_ASSIGN(*=) TACIT_ASSIGN(/=) TACIT_ASSIGN(%=)             \
+  TACIT_ASSIGN(^=) TACIT_ASSIGN(&=) TACIT_ASSIGN(|=) TACIT_ASSIGN(<<=) TACIT_ASSIGN(>>=)           \
+  template <class Y>                                                                               \
+    requires tacit::detail::not_fn<Y> && (!std::is_same_v<std::remove_cvref_t<Y>, self>)          \
+  [[nodiscard]] constexpr auto operator=(Y&& y) const {                                            \
+    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                  \
+             { return std::forward<decltype(x)>(x) = y; }};                                        \
+  }                                                                                                \
   [[nodiscard]] static constexpr auto operator()() {                                               \
     return [](auto&& x) -> decltype(auto) { return std::invoke(std::forward<decltype(x)>(x)); };   \
   }                                                                                                \
@@ -449,9 +500,14 @@ template <class F> struct fn {
     return tacit::detail::fn{                                                                      \
         [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
   }                                                                                                \
-  template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X x, fn g) {                 \
-    return tacit::detail::fn{                                                                      \
-        [g, x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};      \
+  template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {               \
+    if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                            \
+      return tacit::detail::fn{                                                                    \
+          [g, x = std::forward<X>(x)](auto &&y) -> decltype(auto) {                                \
+            return x op g(std::forward<decltype(y)>(y)); }};                                       \
+    else /* non-copyable (stream): bind by reference, e.g. cout << _.size() */                     \
+      return tacit::detail::fn{                                                                    \
+          [g, &x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};   \
   }                                                                                                \
   template <class G> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G> h) {              \
     return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
@@ -460,7 +516,23 @@ template <class F> struct fn {
   }
   TACIT_FN_OP(==) TACIT_FN_OP(!=) TACIT_FN_OP(<) TACIT_FN_OP(>) TACIT_FN_OP(<=) TACIT_FN_OP(>=)
   TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
+  TACIT_FN_OP(&) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
 #undef TACIT_FN_OP
+  // Unary operators compose through the projection: `op g` == x -> op g(x).
+#define TACIT_FN_UNARY(op)                                                                         \
+  [[nodiscard]] friend constexpr auto operator op(fn g) {                                          \
+    return tacit::detail::fn{                                                                      \
+        [g](auto &&x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)); }};           \
+  }
+#define TACIT_FN_UNARY_POST(op)                                                                    \
+  [[nodiscard]] friend constexpr auto operator op(fn g, int) {                                     \
+    return tacit::detail::fn{                                                                      \
+        [g](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op; }};           \
+  }
+  TACIT_FN_UNARY(*) TACIT_FN_UNARY(-) TACIT_FN_UNARY(+) TACIT_FN_UNARY(!) TACIT_FN_UNARY(~) TACIT_FN_UNARY(&)
+  TACIT_FN_UNARY(++) TACIT_FN_UNARY(--) TACIT_FN_UNARY_POST(++) TACIT_FN_UNARY_POST(--)
+#undef TACIT_FN_UNARY
+#undef TACIT_FN_UNARY_POST
   // Left-to-right composition: `f | g` == x -> g(f(x)); g is any callable (incl. another fn), and the
   // result is itself an fn so pipelines keep composing. No clash with the ranges pipe, whose left
   // operand is a range, not an fn.
@@ -493,6 +565,23 @@ template <class F> struct fn {
 } // namespace detail
 // clang-format on
 
+// The arrow proxy behind `_->NAME(...)`. `_`'s operator-> hands back a pointer to this; its
+// vocabulary forwards through `->`, so `_->size()` == x -> x->size() — the pointee's member via the
+// *real* operator-> (which is independent of, and not always equal to, `(*x).size()`).
+namespace detail {
+struct arrow {
+  TACIT_STD_MEMBERS(TACIT_ARROW_MEMBER)
+  // Range access: through `->` these are ordinary member calls on the pointee (no CPO routing —
+  // the pointee has the members), so they join the arrow vocabulary as plain forwarders.
+  TACIT_ARROW_MEMBER(begin);  TACIT_ARROW_MEMBER(end);    TACIT_ARROW_MEMBER(cbegin);
+  TACIT_ARROW_MEMBER(cend);   TACIT_ARROW_MEMBER(rbegin); TACIT_ARROW_MEMBER(rend);
+  TACIT_ARROW_MEMBER(size);   TACIT_ARROW_MEMBER(ssize);  TACIT_ARROW_MEMBER(empty);
+  TACIT_ARROW_MEMBER(data);
+  TACIT_EXTRA_MEMBERS(TACIT_ARROW_MEMBER)
+};
+inline constexpr arrow arrow_v;
+} // namespace detail
+
 // The one type `_`: the placeholder's own type. It carries the full std vocabulary (plus any
 // TACIT_EXTRA_MEMBERS) and the core for the value side, and doubles as the type-level `_` — a blank
 // for `bind` and a projection namespace (`_::name::of<X>`). The value `_` (next) hides the type in
@@ -505,6 +594,7 @@ struct _ {
   TACIT_CPO2(swap, std::ranges::swap)
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_EXTRA_TYPE_MEMBERS
+  [[nodiscard]] constexpr const detail::arrow* operator->() const { return &detail::arrow_v; }
   TACIT_CORE(_);
 };
 inline constexpr _ _;
@@ -631,9 +721,13 @@ using tacit::_;
 // mean re-deriving tacit's `__cpp_*` condition.
 #ifndef TACIT_KEEP_MACROS
 #undef TACIT_MEMBER
+#undef TACIT_ARROW_MEMBER
 #undef TACIT_CPO1
 #undef TACIT_CPO2
 #undef TACIT_SECTION
+#undef TACIT_UNARY
+#undef TACIT_UNARY_POST
+#undef TACIT_ASSIGN
 #undef TACIT_REFLECT
 #undef TACIT_CORE
 #undef TACIT_STD_MEMBERS
