@@ -14,7 +14,7 @@
 //            reusable core for deriving your own domain-specific placeholders
 // ============================================================================================
 //
-//  `_` (of type `tacit::lieutenant`) is a stateless global object whose members
+//  `_` (a stateless global object of its own type `tacit::_`) whose members
 //  return closures that forward to a same-named operation on whatever they are
 //  later applied to:
 //
@@ -81,9 +81,9 @@
 //  `_.size()` / `_.begin()` also work on C arrays, string views, and
 //  third-party ranges.
 //
-//  ON THE NAME.  "tacit" is point-free programming; "lieutenant" is French
-//  "lieu tenant" — literally "place-holding" — sidestepping the loaded English
-//  "placeholder".
+//  ON THE NAME.  "tacit" is point-free programming; "lieutenant" (French "lieu
+//  tenant" — literally "place-holding") is the general term for a placeholder and
+//  the derive macro TACIT_LIEUTENANT, sidestepping the loaded English word.
 // ============================================================================================
 
 #include <array>
@@ -493,25 +493,21 @@ template <class F> struct fn {
 } // namespace detail
 // clang-format on
 
-// The default placeholder: the full std vocabulary (plus any
-// TACIT_EXTRA_MEMBERS) and the core.
-struct lieutenant {
+// The one type `_`: the placeholder's own type. It carries the full std vocabulary (plus any
+// TACIT_EXTRA_MEMBERS) and the core for the value side, and doubles as the type-level `_` — a blank
+// for `bind` and a projection namespace (`_::name::of<X>`). The value `_` (next) hides the type in
+// ordinary lookup, but a name before `::` is looked up considering only types, namespaces, and
+// templates, so `_::name` reaches this struct past the value; elsewhere reach the type via `struct _`.
+struct _ {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
   TACIT_EXTRA_MEMBERS(TACIT_MEMBER)
   TACIT_STD_CPOS1(TACIT_CPO1)
   TACIT_CPO2(swap, std::ranges::swap)
-  TACIT_CORE(lieutenant);
-};
-
-// The type-level `_`: a blank for `bind` AND a projection namespace (`_::name::of<X>`). The value `_`
-// (next) hides it in ordinary lookup, but a name before `::` is looked up considering only types,
-// namespaces, and templates, so `_::name` reaches this struct past the value; elsewhere reach the
-// type via the elaborated `struct _`.
-struct _ {
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_EXTRA_TYPE_MEMBERS
+  TACIT_CORE(_);
 };
-inline constexpr lieutenant _;
+inline constexpr _ _;
 
 // Closure combinators (Haskell arrow flavour). `_`-agnostic — any callable works — and each returns
 // an fn, so results keep composing (member access, operator sections, `|`, ...).

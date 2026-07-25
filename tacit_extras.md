@@ -42,7 +42,7 @@ aggregates and reflection ranges behind a `TACIT_HAS_EXPANSION` flag — no API 
 ## Hybrid: member chaining + projected blanks (implemented)
 
 Prototyping the items below (standalone, on g++ 13 / clang 18) showed that three of them are one
-change, not three. Today `_` (the `lieutenant`) and a composed projection (`detail::fn`) are separate
+change, not three. Today `_` (of its own type `_`) and a composed projection (`detail::fn`) are separate
 types: `fn` composes but carries no vocabulary and is not a blank. Give `fn` the vocabulary and
 blank-ness and these fall out together:
 

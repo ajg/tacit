@@ -23,9 +23,9 @@ nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::vie
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
 reached *through* the object, and the operator forms (sections, `|`) are hidden friends found by ADL,
-so they need no `using`. The only other public name is the opt-in type-level `tacit::bind`, and it
-reuses the same identifier as `struct _`, so it adds no name of its own. (The free-function combinators
-live behind `#define TACIT_COMBINATORS` and are off by default — see [Composition](#composition).)
+so they need no `using`. Everything else is a qualified `tacit::` helper that never enters your scope.
+(The free-function combinators live behind `#define TACIT_COMBINATORS`, off by default — see
+[Composition](#composition); a small, experimental type-level surface is noted near the end.)
 
 Prefer `#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the
 `using` for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.
@@ -192,39 +192,12 @@ on from the consumer side; build the interface with `-DTACIT_COMBINATORS` to hav
 combinators too. Verified on clang; GCC's `-fmodules-ts` isn't reliable for this pattern yet, so
 prefer `#include` there.
 
-## Type-level `_`
+## Type-level `_` (experimental)
 
-`_` doubles as a *type-level* blank for partially applying a class template. Because a template
-argument list can't hold the value `_`, the blank is written `struct _` (its tag-namespace twin), so
-fixed arguments stay plain types:
-
-```cpp
-tacit::bind<std::vector, struct _>::with<int>       // std::vector<int>
-tacit::bind<std::map, int, struct _>::with<double>  // std::map<int, double>
-```
-
-`_` is also a type-level *projection* namespace — the dual of `bind`. Where `bind` wraps the hole in
-an outer template, `_::name::of<X>` pulls a nested member *out* of `X`: the type-level twin of the
-value-level member vocabulary. (`of` is the applier — there's no `operator()` at the type level — and
-`_::name` reaches the type past the value through the same qualified-lookup rule that makes `struct _`
-work.)
-
-```cpp
-tacit::_::value_type::of<std::vector<int>>          // int
-tacit::_::mapped_type::of<std::map<int, char>>      // char
-// chains by nesting: vector<vector<char>> -> vector<char> -> char
-tacit::_::value_type::of<tacit::_::value_type::of<std::vector<std::vector<char>>>>   // char
-```
-
-It's a closed vocabulary of standard nested-type names (`value_type`, `size_type`, `key_type`,
-`mapped_type`, `element_type`, `iterator`, …). Add your own — including nested-*template* projections,
-reached as `_::name<A...>::of<X>` — via `TACIT_EXTRA_TYPE_MEMBERS`:
-
-```cpp
-#define TACIT_EXTRA_TYPE_MEMBERS TACIT_TYPE_MEMBER(tag); TACIT_TYPE_TEMPLATE(rebind);
-#include <tacit/_.hpp>
-// tacit::_::tag::of<W>  ==  W::tag ;   tacit::_::rebind<char>::of<A>  ==  A::template rebind<char>
-```
+The same `_` does double duty at the *type* level — it's a hole for partially applying a class template
+and a projection namespace for pulling nested members out of a type. That surface is unstable and left
+undocumented here on purpose while it settles; see [`tacit_extras.md`](tacit_extras.md) if you're
+curious, and the `typelevel` / `typeproject` tests for what works today.
 
 ## Build & test
 
@@ -242,6 +215,14 @@ find_package(tacit REQUIRED)   # after `cmake --install`
 target_link_libraries(your_target PRIVATE tacit::tacit)
 ```
 
+Or fetch it with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) (no extra setup needed — the
+`add_subdirectory` path defines `tacit::tacit` and skips tacit's own tests when consumed):
+
+```cmake
+CPMAddPackage("gh:ajg/tacit#master")   # or pin a tagged release
+target_link_libraries(your_target PRIVATE tacit::tacit)
+```
+
 To run the test suite:
 
 ```sh
@@ -252,8 +233,9 @@ ctest --test-dir build --output-on-failure
 
 ## On the name
 
-`tacit` names the paradigm (point-free / tacit programming). The type of `_` is `tacit::lieutenant` —
-French *lieu tenant*, literally "place-holder," a stand-in — which is exactly what `_` is, while
+`tacit` names the paradigm (point-free / tacit programming). `_`'s own type is just `tacit::_`; the
+evocative name — French *lieu tenant*, literally "place-holder," a stand-in — lives on in the
+`TACIT_LIEUTENANT` derive macro, while
 sidestepping the loaded English word "placeholder" (already spoken for by `std::placeholders` and by
 the grammar term *placeholder type specifier* for `auto`); the irony is not lost entirely that
 point-free style almost necessarily involves more points in the literal sense (periods/dots),

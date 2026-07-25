@@ -30,3 +30,23 @@ jobs:
           clang++-18 $FLAGS --precompile tacit.cppm -o tacit.pcm
           clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
           ./module_check
+
+  packaging:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consume via add_subdirectory (FetchContent / CPM path)
+        run: |
+          cmake -S tests/packaging -B build-pkg -DCMAKE_CXX_COMPILER=g++-13
+          cmake --build build-pkg
+          ctest --test-dir build-pkg --output-on-failure
+      - name: Consume via install + find_package
+        run: |
+          cmake -B build-install -DCMAKE_INSTALL_PREFIX="$PWD/_inst"
+          cmake --install build-install
+          printf 'cmake_minimum_required(VERSION 3.20)\nproject(fp CXX)\nfind_package(tacit REQUIRED)\nadd_executable(a a.cpp)\ntarget_link_libraries(a PRIVATE tacit::tacit)\n' > /tmp/fp_CMakeLists.txt
+          mkdir -p /tmp/fp && cp /tmp/fp_CMakeLists.txt /tmp/fp/CMakeLists.txt
+          printf '#include <tacit/_.hpp>\nusing tacit::_;\nint main(){ return (_ == 0)(0) ? 0 : 1; }\n' > /tmp/fp/a.cpp
+          cmake -S /tmp/fp -B /tmp/fp/build -DCMAKE_PREFIX_PATH="$PWD/_inst" -DCMAKE_CXX_COMPILER=g++-13
+          cmake --build /tmp/fp/build
+          /tmp/fp/build/a
