@@ -253,6 +253,20 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+To run **CI** — every job in `.github/workflows/ci.yml`: the suite, the `import tacit;` module build,
+and both packaging paths — there's `ci.sh`, and a `shell.nix` that pins the compilers it uses:
+
+```sh
+nix-shell --run ./ci.sh                    # clang (CI's clang++-18 leg)
+nix-shell --argstr cc gcc --run ./ci.sh    # gcc 13 (CI's g++-13 leg)
+CXX=g++-13 ./ci.sh                         # or your own compiler, no nix
+```
+
+It prints which compiler it actually used, and skips (rather than silently drops) anything the local
+platform can't run. On Linux the pins are exactly CI's. On aarch64-darwin two are forced — gcc isn't
+in the binary cache there, and clang 18's stdenv doesn't build — so the shell lands on the nearest
+working clang and says so; `shell.nix` documents each substitution and why.
+
 ## On the name
 
 `tacit` names the paradigm (point-free / tacit programming). `_`'s own type is just `tacit::_`; `_`

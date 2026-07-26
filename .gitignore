@@ -6,3 +6,5 @@
 .cache/
 compile_commands.json
 .DS_Store
+/build-ci/
+result
