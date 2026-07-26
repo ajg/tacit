@@ -650,6 +650,39 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //   #define TACIT_VERBS area, perimeter, scale
 // This is how you teach `_` a domain vocabulary — there is no separate placeholder object; `_` stays
 // the one interface. (Its type-level twin is TACIT_NOUNS, below.)
+// VOCABULARY FILE (the richer twin of the TACIT_VERBS / TACIT_NOUNS comma lists). Point
+// TACIT_VOCABULARY at a header, or just drop a `tacit_vocabulary.hpp` on the include path and it is
+// found by `__has_include`:
+//
+//     #define TACIT_VOCABULARY <bank/vocabulary.hpp>
+//     #include <tacit/_.hpp>
+//
+// The file is a list of entries, and — unlike a bare comma list — each entry chooses its *dispatch
+// kind*, so a domain free function or customization point is reachable, not just member calls:
+//
+//     TACIT_VERB(deposit)               // x.deposit(a...)
+//     TACIT_FREE(area, geom::area)      // geom::area(x)          — a bare value has no members
+//     TACIT_CPO(extent, geom::extent)   // geom::extent(x)        — a customization point
+//     TACIT_NOUN(payload_type)          // _::payload_type::of<X> == X::payload_type
+//
+// The file is included ONCE PER SURFACE (`_`, its projections, the arrow proxy, comma sections, the
+// lift), each time with the entry macros bound to that surface's forwarder — the X-macro pattern. So
+// it must NOT have an include guard or `#pragma once`, and must contain nothing but entries.
+//
+// Two entries, one list, one place: every translation unit that includes tacit sees the same
+// vocabulary by construction. That is the point over `#define TACIT_VERBS`, which every TU has to
+// repeat identically before the include or else end up with a different `_`. It is not a *guarantee*
+// — a TU that points TACIT_VOCABULARY somewhere else still gets a different `_`, and mixing those in
+// one program is an ODR violation like any other — but it removes the per-TU ritual that made the
+// mismatch easy to cause by accident.
+#if defined(TACIT_VOCABULARY)
+#define TACIT_VOCABULARY_FILE TACIT_VOCABULARY
+#elif defined(__has_include)
+#if __has_include(<tacit_vocabulary.hpp>)
+#define TACIT_VOCABULARY_FILE <tacit_vocabulary.hpp>
+#endif
+#endif
+
 #ifndef TACIT_VERBS
 #define TACIT_VERBS
 #endif
@@ -876,6 +909,17 @@ template <class F, class Last> struct fn {
              { return FN(g(std::forward<X>(x)...)); }};                                            \
   }
   TACIT_STD_FREES(TACIT_FN_FREE1)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_FN_MEMBER(NAME);
+#define TACIT_FREE(NAME, FN) TACIT_FN_FREE1(NAME, FN)
+#define TACIT_CPO(NAME, FN) TACIT_FN_CPO1(NAME, FN)
+#define TACIT_NOUN(NAME)
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
 #undef TACIT_FN_FREE1
   // Range-adaptor verbs compose through the projection, so a pipeline keeps chaining (opt-in).
 #ifdef TACIT_VIEWS
@@ -943,6 +987,14 @@ template <class... Ops> struct comma_section {
           } { return c(std::forward<X>(x)...).NAME(a...); }};                                      \
   }                                                                                                \
   static_assert(true)
+#define TACIT_COMMA_FREE1(NAME, FN)                                                                \
+  [[nodiscard]] constexpr auto NAME() const {                                                      \
+    return tacit::detail::fn{                                                                      \
+        [c = *this]<class... X>(X &&...x) -> decltype(auto)                                        \
+          requires requires(X &&...xx) {                                                           \
+            FN(std::declval<comma_section const &>()(std::forward<X>(xx)...));                     \
+          } { return FN(c(std::forward<X>(x)...)); }};                                             \
+  }
 #define TACIT_COMMA_CPO1(NAME, CPO)                                                                \
   [[nodiscard]] constexpr auto NAME() const {                                                      \
     return tacit::detail::fn{                                                                      \
@@ -953,9 +1005,21 @@ template <class... Ops> struct comma_section {
   }
   TACIT_STD_MEMBERS(TACIT_COMMA_MEMBER)
   TACIT_FOR_EACH(TACIT_COMMA_MEMBER, TACIT_VERBS)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_COMMA_MEMBER(NAME);
+#define TACIT_FREE(NAME, FN) TACIT_COMMA_FREE1(NAME, FN)
+#define TACIT_CPO(NAME, FN) TACIT_COMMA_CPO1(NAME, FN)
+#define TACIT_NOUN(NAME)
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
   TACIT_STD_CPOS1(TACIT_COMMA_CPO1)
 #undef TACIT_COMMA_MEMBER
 #undef TACIT_COMMA_CPO1
+#undef TACIT_COMMA_FREE1
 
   // Comparisons, likewise through the built value: `(_, _) == p` is (a, b) -> {a, b} == p, and `<`
   // is the lexicographic order `pair`/`tuple` already define — the six are the operators those types
@@ -1022,6 +1086,17 @@ struct arrow {
   TACIT_ARROW_MEMBER(size);   TACIT_ARROW_MEMBER(ssize);  TACIT_ARROW_MEMBER(empty);
   TACIT_ARROW_MEMBER(data);
   TACIT_FOR_EACH(TACIT_ARROW_MEMBER, TACIT_VERBS)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_ARROW_MEMBER(NAME);
+#define TACIT_FREE(NAME, FN)
+#define TACIT_CPO(NAME, FN)
+#define TACIT_NOUN(NAME)
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
 };
 inline constexpr arrow arrow_v;
 } // namespace detail
@@ -1079,6 +1154,17 @@ template <class... A> struct hole {
 struct _ {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
   TACIT_FOR_EACH(TACIT_MEMBER, TACIT_VERBS)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_MEMBER(NAME);
+#define TACIT_FREE(NAME, FN) TACIT_FREE1(NAME, FN)
+#define TACIT_CPO(NAME, FN) TACIT_CPO1(NAME, FN)
+#define TACIT_NOUN(NAME) TACIT_TYPE_MEMBER(NAME);
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
   TACIT_STD_CPOS1(TACIT_CPO1)
   TACIT_STD_FREES(TACIT_FREE1)
   TACIT_CPO2(swap, std::ranges::swap)
@@ -1221,6 +1307,17 @@ template <class T> struct held {
     requires requires(T const &x) { FN(x); } { return FN(v); }
   TACIT_STD_MEMBERS(TACIT_HELD_MEMBER)
   TACIT_FOR_EACH(TACIT_HELD_MEMBER, TACIT_VERBS)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_HELD_MEMBER(NAME);
+#define TACIT_FREE(NAME, FN) TACIT_HELD_FREE1(NAME, FN)
+#define TACIT_CPO(NAME, FN) TACIT_HELD_CPO1(NAME, FN)
+#define TACIT_NOUN(NAME)
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
   TACIT_STD_CPOS1(TACIT_HELD_CPO1)
   TACIT_STD_FREES(TACIT_HELD_FREE1)
 #undef TACIT_HELD_MEMBER
@@ -1485,6 +1582,7 @@ using tacit::_;
 #undef TACIT_EXPAND_A
 #undef TACIT_EXPAND_B
 #undef TACIT_EXPAND_C
+#undef TACIT_VOCABULARY_FILE
 #undef TACIT_VERBS
 #undef TACIT_NOUNS
 #undef TACIT_NOUN_TEMPLATES

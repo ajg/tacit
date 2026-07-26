@@ -76,9 +76,7 @@ project or test with: diagnostics (`what`, `code`, `message`), `filesystem::path
 (`subspan`, `size_bytes`). Names cost nothing until used — each is a member template, so a wider
 table is a longer declaration list, not a bigger binary.
 
-The type-level table is the twin, and reaches the same way: `_::rep::of<duration>`,
-`_::hasher::of<unordered_map<…>>`, `_::deleter_type::of<unique_ptr<…>>`,
-`_::container_type::of<stack<…>>`, `_::iterator_category::of<It>`.
+There is a type-level table too — see *Type level*, below.
 
 ### Operator sections
 
@@ -205,33 +203,10 @@ std::vector<std::function<void()>> thunks{};
 std::for_each(thunks, _()); // invoke each thunk
 ```
 
-## Values and types
+## The term wrapper
 
-`_` is a hole in the **term** world, awaiting its subject. Two things sit beside it: a hole in the
-**type** world, and a way to hand either world a subject it already has.
-
-`tacit::hole<A...>` is the type-level twin, with two duals — `of` fixes the arguments and awaits the
-template, `as` fixes the template and awaits the arguments:
-
-```cpp
-hole<int>::of<std::vector>            // std::vector<int>      head is the hole
-hole<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
-```
-
-Plain types and plain templates throughout — nothing quoted, nothing wrapped.
-
-`_::rebind` works the other direction: it **decomposes** a specialisation you already have and
-re-applies its template, so you never name the template at all —
-
-```cpp
-_::rebind<double>::of<std::vector<float>>   // std::vector<double>
-_::rebind<double>::of<std::array<float, 5>> // std::array<double, 5>
-```
-
-Arguments are replaced wholesale, which is what defaulted parameters want: `std::vector<float>` is
-really `vector<float, allocator<float>>`, so `rebind<double>` re-defaults the allocator instead of
-carrying `allocator<float>` across. This is the shape `std::simd`'s `rebind_t` has and that
-[P3971](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3971r0.html) is standardising.
+`_` is a hole, awaiting its subject. `tacit::lift(x)` is the other side: it hands the vocabulary a
+subject it already has, and applies it **eagerly**.
 
 `tacit::lift(x)` is the term-level counterpart: it gives a plain value the vocabulary it may not have
 as members, and applies it **eagerly**. The rule is exactly `lift(x).f(a…)` == `_.f(a…)(x)`, so there
@@ -274,6 +249,20 @@ It is gated because `$` is not an identifier in standard C++ — a GCC/Clang ext
 `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift`; nothing is
 `$`-only, and a default build never sees it.
 
+## Type level
+
+Pain. Avoided for now.
+
+There *is* a working type-level surface — `_::hole<>` with `of`/`as`, `_::rebind`, the noun
+projections, `bind`/`apply` — and `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typeproject.cpp`
+and `tests/typeapply.cpp` show what it does. But the notation never came out pleasant, for reasons
+that turned out to be language rules rather than taste: a name is one *kind* of entity per scope, so
+`_` cannot be both the value and a template, and `_ < _` stops parsing the moment it tries.
+
+The full account — everything attempted and why each failed, including the parts that *do* work — is
+in `tacit_extras.md` under **Four quadrants**. Read that before reopening it; the dead ends are
+thoroughly mapped.
+
 ## Teach `_` your own names
 
 `_` is the only placeholder — there is no separate derived object to learn or spell. To hand it a
@@ -294,6 +283,35 @@ Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE 
 error — a domain verb sits safely alongside the standard vocabulary. The same list also lands on `_`'s
 composable projections (`_.balance() < _.balance()`) and on the arrow proxy (`_->balance()`), so a
 verb behaves everywhere the built-in names do.
+
+### A vocabulary file
+
+The comma list has to be `#define`d before the include, identically, in every translation unit — miss
+one and that TU gets a different `_`. A **vocabulary file** avoids the ritual: point
+`TACIT_VOCABULARY` at a header, or drop a `tacit_vocabulary.hpp` on the include path and
+`__has_include` finds it.
+
+```cpp
+// bank/vocabulary.hpp — entries only, and NO include guard
+TACIT_VERB(deposit)               // x.deposit(a...)
+TACIT_FREE(risk, bank::risk)      // bank::risk(x)
+TACIT_CPO(tier, bank::tier)       // bank::tier(x)
+TACIT_NOUN(money_type)            // _::money_type::of<X>
+```
+
+```cpp
+#define TACIT_VOCABULARY <bank/vocabulary.hpp>
+#include <tacit/_.hpp>
+```
+
+The gain over a bare list is that each entry picks its **dispatch kind**, so a domain free function or
+customization point is reachable — `TACIT_VERBS` can only make member calls. The file is expanded once
+per surface (`_`, its projections, `->`, comma sections, the lift), X-macro style, which is why it must
+contain nothing but entries and carry no include guard.
+
+It makes an ODR mismatch far less likely, not impossible: a TU that points `TACIT_VOCABULARY`
+elsewhere still gets a different `_`, and mixing those in one program is an ODR violation like any
+other.
 
 Blank detection is trait-based, so `_` is recognised as a blank in any argument position.
 

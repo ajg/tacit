@@ -412,6 +412,41 @@ parameter-kind split that makes `bind` need `quote<F>`, surfacing on the project
 rather than one is the price of that asymmetry; the common (nullary) case pays nothing for it, and
 nothing in the std table needs the templated form, so it stays opt-in and rarely reached for.
 
+### Type level: what exists and what it spells
+
+Moved out of the README, which now says only "pain, avoided for now" — the surface works, but the
+notation never became pleasant enough to lead with. What is built and tested:
+
+`_` is a hole in the **term** world, awaiting its subject. Two things sit beside it: a hole in the
+**type** world, and a way to hand either world a subject it already has.
+
+`tacit::hole<A...>` is the type-level twin, with two duals — `of` fixes the arguments and awaits the
+template, `as` fixes the template and awaits the arguments:
+
+```cpp
+hole<int>::of<std::vector>            // std::vector<int>      head is the hole
+hole<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
+```
+
+Plain types and plain templates throughout — nothing quoted, nothing wrapped.
+
+`_::rebind` works the other direction: it **decomposes** a specialisation you already have and
+re-applies its template, so you never name the template at all —
+
+```cpp
+_::rebind<double>::of<std::vector<float>>   // std::vector<double>
+_::rebind<double>::of<std::array<float, 5>> // std::array<double, 5>
+```
+
+Arguments are replaced wholesale, which is what defaulted parameters want: `std::vector<float>` is
+really `vector<float, allocator<float>>`, so `rebind<double>` re-defaults the allocator instead of
+carrying `allocator<float>` across. This is the shape `std::simd`'s `rebind_t` has and that
+[P3971](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3971r0.html) is standardising.
+
+`bind`/`apply` remain for the arg-hole grain with the hole spelled `_::hole<>`; `as` is the spelling
+that needs no marker. See `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typeproject.cpp`,
+`tests/typeapply.cpp`.
+
 ### Four quadrants: term/type × open/closed (design notes; not yet built)
 
 #### Where it landed (decision)
