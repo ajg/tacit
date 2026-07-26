@@ -1134,6 +1134,14 @@ struct fill_slots<F, std::tuple<D...>, Xs> {
 template <template <class...> class F, class... D, class X, class... Xr, class... A>
 struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, blank, A...>
     : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
+// ...and the spellings that avoid the `struct` crutch: the bare type-level hole, and `decltype(_)`
+// (which is `const _`, since `_` is a constexpr object).
+template <template <class...> class F, class... D, class X, class... Xr, class... A>
+struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, tacit::hole<>, A...>
+    : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
+template <template <class...> class F, class... D, class X, class... Xr, class... A>
+struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, blank const, A...>
+    : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
 template <template <class...> class F, class... D, class Xs, class A0, class... A>
 struct fill_slots<F, std::tuple<D...>, Xs, A0, A...>
     : fill_slots<F, std::tuple<D..., A0>, Xs, A...> {};
@@ -1235,6 +1243,12 @@ struct apply_slots<std::tuple<Acc...>, Fills> {
 };
 template <class... Acc, class X, class... Xr, class... S>
 struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, blank, S...>
+    : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
+template <class... Acc, class X, class... Xr, class... S>
+struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, tacit::hole<>, S...>
+    : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
+template <class... Acc, class X, class... Xr, class... S>
+struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, blank const, S...>
     : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
 template <class... Acc, class Fills, class S0, class... S>
 struct apply_slots<std::tuple<Acc...>, Fills, S0, S...>
