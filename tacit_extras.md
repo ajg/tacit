@@ -596,6 +596,37 @@ per name), the naming question is closed — the two-symbol grid is not a prefer
 is the only hand C++ deals. Anything beyond those two has to be a word (`blank`, `lift`) or a
 user-written alias.
 
+#### One symbol for all four cells, via a macro (works, but forks the surface)
+
+The preprocessor runs before the name-kind rules, and a *function-like* macro fires only on `(`. So a
+single `_` can be an alias template **and** a macro, splitting the worlds by bracket:
+
+```cpp
+template <class... A> using _ = tacit::blank<A...>;              // no paren -> alias template
+#define _(...) tacit::blank<>{} __VA_OPT__(.apply(__VA_ARGS__))  // paren    -> term world
+
+_<>        // type hole          _()    // term hole
+_<int>     // type head-hole     _(3)   // term application  (__VA_OPT__ splits empty from applied)
+```
+
+Angle brackets for types, parens for terms, one symbol — the original sketch's symmetry, needing no
+`$`, no reserved identifier and no non-ASCII. Verified clean under
+`-Wall -Wextra -Werror -pedantic-errors`: **fully conforming**, which nothing else in this section is.
+
+Two costs. `_ < _` becomes `_() < _()` — the signature notation, taxed on every use, on the hot path.
+And `_` becomes a function-like macro claiming `_(` for the whole TU, which collides directly with
+gettext's `_("...")` — the very hazard the header already cites for not forcing a global `_`.
+
+The deeper objection is that this is a **fork, not a spelling**: one variant makes `_` a variable, the
+other a template plus a macro, so they cannot coexist in a TU and every example, test and README
+snippet diverges between them. `__` / `$` / `_t` were all aliases over one surface; this is a second
+surface. Worth keeping precisely because it is the only fully-conforming way to get the whole grid on
+one symbol — the price is paid in the term world, which is the one that matters most.
+
+What macros cannot do, for the record: they cannot let `_` be both a *value* and a template, because
+`_ < _` and `_ < int >` are lexically identical at `_ <` and there is no paren to key on. Both
+directions were tried (object-like `_` expanding to a template name, and to a value) and both fail.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
