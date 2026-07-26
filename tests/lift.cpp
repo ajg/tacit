@@ -4,6 +4,7 @@
 #include <tacit/_.hpp>
 
 #include <cassert>
+#include <array>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -46,6 +47,25 @@ int main() {
                                  std::map<char, int>>);
     static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
                                  std::vector<int>>);   // the older spelling still works
+  }
+
+  // ---- structural rebind: same template, different arguments ----
+  {
+    // decomposes a specialisation you already have, rather than building one from a template you
+    // name — you never write `std::vector`, which is the point
+    static_assert(std::is_same_v<_::rebind<double>::of<std::vector<float>>, std::vector<double>>);
+    static_assert(std::is_same_v<_::rebind<char, int>::of<std::map<int, char>>,
+                                 std::map<char, int>>);
+    // arguments are replaced wholesale, so a defaulted allocator RE-defaults rather than being
+    // carried across wrongly as allocator<float>
+    static_assert(std::is_same_v<_::rebind<double>::of<std::vector<float>>,
+                                 std::vector<double, std::allocator<double>>>);
+    // the <class, size_t> shapes keep their extent
+    static_assert(std::is_same_v<_::rebind<double>::of<std::array<float, 5>>,
+                                 std::array<double, 5>>);
+    // composes with the rest of the type-level surface
+    static_assert(std::is_same_v<_::value_type::of<_::rebind<double>::of<std::vector<float>>>,
+                                 double>);
   }
 
   // ---- the lift: a plain value gets the vocabulary, applied eagerly ----

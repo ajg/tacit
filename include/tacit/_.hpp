@@ -1027,6 +1027,33 @@ inline constexpr arrow arrow_v;
 } // namespace detail
 
 // ------------------------------------------------------------------------------------------------
+// Structural rebind: same template, different arguments — `_::rebind<double>::of<std::vector<float>>`
+// is `std::vector<double>`. This is the one type-level operation with demand behind it outside
+// metaprogramming libraries: it is what `std::simd`'s `rebind_t` does, what allocator `rebind_alloc`
+// does for its own family, and what P3971 is standardising for containers generally.
+//
+// It differs from `hole`/`bind` in the direction it works. Those *build* a specialisation from a
+// template you name; rebind *decomposes* one you already have and re-applies its template. You never
+// name `std::vector` — that is the point, since the caller usually does not know it.
+//
+// Arguments are replaced wholesale, which is what you want for defaulted parameters: `std::vector<float>`
+// is really `vector<float, allocator<float>>`, and `rebind<double>` yields `vector<double>` — the
+// allocator re-defaults to `allocator<double>` rather than being carried across, wrongly, as
+// `allocator<float>`. A second form handles the `<class, size_t>` shapes (`array`, `span`), whose
+// extent is not a type and so rides along untouched.
+namespace detail {
+template <class X, class... New> struct rebind_;
+template <template <class...> class F, class... Old, class... New>
+struct rebind_<F<Old...>, New...> {
+  using type = F<New...>;
+};
+template <template <class, std::size_t> class F, class Old, std::size_t N, class New>
+struct rebind_<F<Old, N>, New> {
+  using type = F<New, N>;
+};
+} // namespace detail
+
+// ------------------------------------------------------------------------------------------------
 // The type-level hole. One template, two duals: `of` fixes the arguments and awaits the template,
 // `as` fixes the template and awaits the arguments — the head-hole and arg-hole grains of the same
 // thing. Both take plain types and plain templates, so nothing needs lifting or quoting:
@@ -1059,6 +1086,12 @@ struct _ {
      is looked up considering only types, namespaces and templates, so it reaches this class past
      the variable `_` — the same route the nouns below take. */
   template <class... A> using hole = tacit::hole<A...>;
+  /* structural rebind: `_::rebind<double>::of<std::vector<float>>` == `std::vector<double>`. Named
+     for the standard's own vocabulary (simd's `rebind_t`, P3971); a TACIT_NOUN_TEMPLATES entry of
+     the same name would collide, since that hook spells the *nested* rebind (`X::template rebind`). */
+  template <class... New> struct rebind {
+    template <class X> using of = typename tacit::detail::rebind_<X, New...>::type;
+  };
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_FOR_EACH(TACIT_TYPE_MEMBER, TACIT_NOUNS)
   TACIT_FOR_EACH(TACIT_TYPE_TEMPLATE, TACIT_NOUN_TEMPLATES)

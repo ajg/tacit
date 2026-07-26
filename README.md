@@ -220,6 +220,19 @@ hole<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
 
 Plain types and plain templates throughout — nothing quoted, nothing wrapped.
 
+`_::rebind` works the other direction: it **decomposes** a specialisation you already have and
+re-applies its template, so you never name the template at all —
+
+```cpp
+_::rebind<double>::of<std::vector<float>>   // std::vector<double>
+_::rebind<double>::of<std::array<float, 5>> // std::array<double, 5>
+```
+
+Arguments are replaced wholesale, which is what defaulted parameters want: `std::vector<float>` is
+really `vector<float, allocator<float>>`, so `rebind<double>` re-defaults the allocator instead of
+carrying `allocator<float>` across. This is the shape `std::simd`'s `rebind_t` has and that
+[P3971](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3971r0.html) is standardising.
+
 `tacit::lift(x)` is the term-level counterpart: it gives a plain value the vocabulary it may not have
 as members, and applies it **eagerly**. The rule is exactly `lift(x).f(a…)` == `_.f(a…)(x)`, so there
 is one vocabulary and one dispatch, not two to keep in step:
