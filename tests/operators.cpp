@@ -110,6 +110,18 @@ int main() {
     assert(std::apply([](int x, int y, int z) { return x + y + z; }, (_, _, _)(1, 2, 3)) == 6);
     constexpr auto k = (_, _, _)(1, 2, 3);
     static_assert(std::get<1>(k) == 2);
+
+    // a comma section composes onward through the value it builds, keeping its arity
+    auto eq = (_, _) == std::pair{1, 2};
+    assert(eq(1, 2) && !eq(1, 3));
+    auto lt = (_, _) < std::pair{2, 0};  // lexicographic, as pair defines it
+    assert(lt(1, 9) && !lt(2, 1));
+    assert((std::pair{2, 0} > (_, _))(1, 9));  // and from the left
+    auto key = (_.size(), _.front()) == std::pair<std::size_t, char>{2, 'a'};
+    assert(key(std::string("xy"), std::string("ab")));
+    auto t3cmp = (_, _, _) < std::tuple{1, 2, 4};
+    assert(t3cmp(1, 2, 3) && !t3cmp(1, 2, 9));
+    assert((!((_, _) == std::pair{1, 2}))(9, 9));  // the result is a plain fn, so it keeps going
   }
 
   // ---- operator-> : member of the pointee via the real arrow ----

@@ -171,6 +171,19 @@ compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
   terminal builder rather than an `fn`, so it doesn't carry the vocabulary onward — it makes data.
   Widening `operator,` from `_` to `fn` widens the footgun surface too, which is why
   `for_each_element`'s fold now spells its discard `void(f(x))` rather than leaning on `,`.
+- **Composition became arity-preserving (implemented).** A comma section carries the vocabulary and
+  the six comparisons, applied to the value it builds — `(_, _) == p` is `(a, b) -> {a, b} == p`.
+  Making that chain further (`(_, _).bar().baz()`) needed one change in `fn`: its composition lambdas
+  took a single `X&& x`, so anything they produced collapsed to arity one. They now take `X&&... x`,
+  which costs nothing for the unary case (a unary `g` still only accepts one fill — `g(xs...)` is
+  simply a substitution failure otherwise) and lets an n-ary closure keep composing. `fn`'s
+  `operator()` was already variadic, so the wrapper was never the unary part; only the vocabulary
+  was. Two limits kept deliberately: a chained call takes bound arguments only, since a blank inside
+  one would have to interleave fills across two arity systems (`_.front().substr(_)` has never taken
+  one either), and only the comparisons are lifted — they are the operators `pair`/`tuple` actually
+  have, whereas arithmetic on a data builder would be noise. The member half is dormant against the
+  standard vocabulary, which names nothing `std::pair` or `std::tuple` has; it is live for
+  TACIT_VERBS.
 - **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
 
 ## Range-adaptor verbs (implemented, opt-in `TACIT_VIEWS`)

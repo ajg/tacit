@@ -57,8 +57,9 @@
 //  Two operands are a `pair`, three or more a `tuple`; the list is flat, so
 //  parenthesising concatenates rather than nests. Blanks stay distinct, so
 //  `(_.size(), _.front())` takes TWO arguments — the same-input tuple is
-//  `tacit::fanout(_.size(), _.front())`. A comma section builds data rather than
-//  projecting, so it carries no vocabulary onward (as with every multi-blank form).
+//  `tacit::fanout(_.size(), _.front())`. A comma section composes onward through
+//  the value it builds, keeping its arity: the vocabulary and the six comparisons
+//  apply to the pair/tuple that comes out (`(_, _) == p`, `(_, _) < p`).
 //
 //  TEACH `_` YOUR OWN NAMES.  `_` is the one placeholder — there is no separate
 //  derived object. Domain names are added to `_` in place, pre-#defined before
@@ -163,7 +164,7 @@ concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
 // The rightmost operand is one of three things, hence three `last` shapes:
 template <class Y> struct always { // a bound value: independent of the fill  (`_ < y`)
   Y y;
-  constexpr Y const &operator()(auto &&) const noexcept { return y; }
+  constexpr Y const &operator()(auto &&...) const noexcept { return y; }
 };
 template <class Y> always(Y) -> always<Y>;
 struct same { // the blank itself: the fill, untouched  (`y < _`)
@@ -266,57 +267,10 @@ template <class... Ops> constexpr bool is_comma_v<comma_section<Ops...>> = true;
 template <class T>
 concept not_comma = !is_comma_v<std::remove_cvref_t<T>>;
 
-template <class... A> [[nodiscard]] constexpr comma_section<std::decay_t<A>...> make_comma(A &&...a) {
-  return {{std::forward<A>(a)...}};
-}
-
-template <class... Ops> struct comma_section {
-  using map = slot_map<Ops...>;
-  std::tuple<Ops...> ops;
-
-  static constexpr std::size_t slots = map::slots;
-
-  template <class... F>
-    requires(sizeof...(F) == slots)
-  [[nodiscard]] constexpr auto operator()(F &&...f) const {
-    auto fills = std::forward_as_tuple(std::forward<F>(f)...);
-    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-      return std::apply([](auto &&...xs) { return build(std::forward<decltype(xs)>(xs)...); },
-                        std::tuple_cat(map::template pick<Is>(ops, fills)...));
-    }(std::make_index_sequence<map::arity>{});
-  }
-
-  // Two operands stay a `std::pair` — the documented meaning of the pairing section, and `.first` /
-  // `.second` are strictly extra: a pair is a two-tuple for `get`, `tuple_size`, structured
-  // bindings, and `apply` alike. Three or more have no pair to be, so they are a `std::tuple`.
-  template <class... Xs> [[nodiscard]] static constexpr auto build(Xs &&...xs) {
-    if constexpr (sizeof...(Xs) == 2)
-      return std::pair{std::forward<Xs>(xs)...};
-    else
-      return std::tuple{std::forward<Xs>(xs)...};
-  }
-
-  // Growing the list. `not_comma` on the mixed forms keeps them from competing with the concatenating
-  // overload when both sides are comma sections (`(_, _), (_, _)` is a four-slot tuple).
-  template <class Y>
-    requires not_comma<Y>
-  [[nodiscard]] friend constexpr auto operator,(comma_section c, Y y) {
-    return std::apply([&](auto const &...o) { return make_comma(o..., std::move(y)); }, c.ops);
-  }
-  template <class X>
-    requires not_comma<X>
-  [[nodiscard]] friend constexpr auto operator,(X x, comma_section c) {
-    return std::apply([&](auto const &...o) { return make_comma(std::move(x), o...); }, c.ops);
-  }
-  template <class... B>
-  [[nodiscard]] friend constexpr auto operator,(comma_section c, comma_section<B...> d) {
-    return std::apply(
-        [&](auto const &...a) {
-          return std::apply([&](auto const &...b) { return make_comma(a..., b...); }, d.ops);
-        },
-        c.ops);
-  }
-};
+// The definition lands after the vocabulary tables (as `fn`'s does), since a comma section carries
+// that vocabulary too; these declarations are what the section machinery and the `,` overloads on
+// `_` and `fn` need before then.
+template <class... A> [[nodiscard]] constexpr comma_section<std::decay_t<A>...> make_comma(A &&...a);
 
 #if TACIT_HAS_REFLECTION
 template <std::size_t N> struct fixed_string {
@@ -687,8 +641,8 @@ template <class F, class Last> struct fn {
     requires requires(F const &g, A &&...a) { g(std::forward<A>(a)...); }
   constexpr decltype(auto) operator()(A &&...a) const { return f(std::forward<A>(a)...); }
   template <class I> [[nodiscard]] constexpr auto operator[](I i) const {
-    return tacit::detail::fn{[g = *this, i = std::move(i)](auto &&x) -> decltype(auto) {
-      return g(std::forward<decltype(x)>(x))[i];
+    return tacit::detail::fn{[g = *this, i = std::move(i)](auto &&...x) -> decltype(auto) {
+      return g(std::forward<decltype(x)>(x)...)[i];
     }};
   }
   // Operator sections as hidden friends — found by ADL, including across a module boundary
@@ -696,16 +650,16 @@ template <class F, class Last> struct fn {
 #define TACIT_FN_OP(op)                                                                            \
   template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
     return tacit::detail::fn{                                                                      \
-        [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};      \
+        [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; }};\
   }                                                                                                \
   template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {               \
     if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                            \
       return tacit::detail::fn{                                                                    \
-          [g, x = std::forward<X>(x)](auto &&y) -> decltype(auto) {                                \
-            return x op g(std::forward<decltype(y)>(y)); }};                                       \
+          [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                             \
+            return x op g(std::forward<decltype(y)>(y)...); }};                                    \
     else /* non-copyable (stream): bind by reference, e.g. cout << _.size() */                     \
       return tacit::detail::fn{                                                                    \
-          [g, &x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }};   \
+          [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }};\
   }                                                                                                \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {  \
     return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
@@ -774,12 +728,12 @@ template <class F, class Last> struct fn {
 #define TACIT_FN_UNARY(op)                                                                         \
   [[nodiscard]] friend constexpr auto operator op(fn g) {                                          \
     return tacit::detail::fn{                                                                      \
-        [g](auto &&x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)); }};           \
+        [g](auto &&...x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)...); }};     \
   }
 #define TACIT_FN_UNARY_POST(op)                                                                    \
   [[nodiscard]] friend constexpr auto operator op(fn g, int) {                                     \
     return tacit::detail::fn{                                                                      \
-        [g](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op; }};           \
+        [g](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op; }};     \
   }
   TACIT_FN_UNARY(*) TACIT_FN_UNARY(-) TACIT_FN_UNARY(+) TACIT_FN_UNARY(!) TACIT_FN_UNARY(~) TACIT_FN_UNARY(&)
   TACIT_FN_UNARY(++) TACIT_FN_UNARY(--) TACIT_FN_UNARY_POST(++) TACIT_FN_UNARY_POST(--)
@@ -790,17 +744,17 @@ template <class F, class Last> struct fn {
 #define TACIT_FN_MEMBER(NAME)                                                                      \
   template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
     return tacit::detail::fn{                                                                      \
-        [g = *this, ... a = std::forward<A>(a)]<class X>(X &&x) -> decltype(auto)                  \
-          requires requires(X &&xx, A &&...aa) {                                                   \
-            std::declval<fn const &>()(std::forward<X>(xx)).NAME(std::forward<A>(aa)...);          \
-          } { return g(std::forward<X>(x)).NAME(a...); }};                                         \
+        [g = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)            \
+          requires requires(X &&...xx, A &&...aa) {                                                \
+            std::declval<fn const &>()(std::forward<X>(xx)...).NAME(std::forward<A>(aa)...);       \
+          } { return g(std::forward<X>(x)...).NAME(a...); }};                                      \
   }                                                                                                \
   static_assert(true)
 #define TACIT_FN_CPO1(NAME, CPO)                                                                   \
   [[nodiscard]] constexpr auto NAME() const {                                                      \
-    return tacit::detail::fn{[g = *this]<class X>(X &&x) -> decltype(auto)                         \
-             requires requires(X &&xx) { CPO(std::declval<fn const &>()(std::forward<X>(xx))); }   \
-             { return CPO(g(std::forward<X>(x))); }};                                              \
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)                   \
+             requires requires(X &&...xx) { CPO(std::declval<fn const &>()(std::forward<X>(xx)...)); }\
+             { return CPO(g(std::forward<X>(x)...)); }};                                           \
   }
   TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
   TACIT_FOR_EACH(TACIT_FN_MEMBER, TACIT_VERBS)
@@ -826,6 +780,112 @@ template <class F, class Last> struct fn {
 // left to aggregate deduction) so the one-argument form unambiguously picks up the `nochain` default.
 template <class F> fn(F) -> fn<F, nochain>;
 template <class F, class L> fn(F, L) -> fn<F, L>;
+
+// The comma section proper (declared above) — its vocabulary needs the tables, like `fn`'s.
+template <class... Ops> struct comma_section {
+  using map = slot_map<Ops...>;
+  std::tuple<Ops...> ops;
+
+  static constexpr std::size_t slots = map::slots;
+
+  template <class... F>
+    requires(sizeof...(F) == slots)
+  [[nodiscard]] constexpr auto operator()(F &&...f) const {
+    auto fills = std::forward_as_tuple(std::forward<F>(f)...);
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+      return std::apply([](auto &&...xs) { return build(std::forward<decltype(xs)>(xs)...); },
+                        std::tuple_cat(map::template pick<Is>(ops, fills)...));
+    }(std::make_index_sequence<map::arity>{});
+  }
+
+  // Two operands stay a `std::pair` — the documented meaning of the pairing section, and `.first` /
+  // `.second` are strictly extra: a pair is a two-tuple for `get`, `tuple_size`, structured
+  // bindings, and `apply` alike. Three or more have no pair to be, so they are a `std::tuple`.
+  template <class... Xs> [[nodiscard]] static constexpr auto build(Xs &&...xs) {
+    if constexpr (sizeof...(Xs) == 2)
+      return std::pair{std::forward<Xs>(xs)...};
+    else
+      return std::tuple{std::forward<Xs>(xs)...};
+  }
+
+  // Vocabulary, composing through the built value: `(_, _).swap(p)` is (a, b) -> {a, b}.swap(p).
+  // Same shape as `fn`'s member chaining, and arity-preserving in the same way — the result is an
+  // `fn` over the same fills, so it keeps chaining (`(_, _).bar().baz()`). Bound arguments only:
+  // a blank inside a chained call (`(_, _).foo(_)`) is not a further slot, exactly as it isn't for a
+  // projection (`_.front().substr(_)` has never taken one) — the fills belong to the operand list.
+#define TACIT_COMMA_MEMBER(NAME)                                                                   \
+  template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
+    return tacit::detail::fn{                                                                      \
+        [c = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)            \
+          requires requires(X &&...xx, A &&...aa) {                                                \
+            std::declval<comma_section const &>()(std::forward<X>(xx)...)                          \
+                .NAME(std::forward<A>(aa)...);                                                     \
+          } { return c(std::forward<X>(x)...).NAME(a...); }};                                      \
+  }                                                                                                \
+  static_assert(true)
+#define TACIT_COMMA_CPO1(NAME, CPO)                                                                \
+  [[nodiscard]] constexpr auto NAME() const {                                                      \
+    return tacit::detail::fn{                                                                      \
+        [c = *this]<class... X>(X &&...x) -> decltype(auto)                                        \
+          requires requires(X &&...xx) {                                                           \
+            CPO(std::declval<comma_section const &>()(std::forward<X>(xx)...));                    \
+          } { return CPO(c(std::forward<X>(x)...)); }};                                            \
+  }
+  TACIT_STD_MEMBERS(TACIT_COMMA_MEMBER)
+  TACIT_FOR_EACH(TACIT_COMMA_MEMBER, TACIT_VERBS)
+  TACIT_STD_CPOS1(TACIT_COMMA_CPO1)
+#undef TACIT_COMMA_MEMBER
+#undef TACIT_COMMA_CPO1
+
+  // Comparisons, likewise through the built value: `(_, _) == p` is (a, b) -> {a, b} == p, and `<`
+  // is the lexicographic order `pair`/`tuple` already define — the six are the operators those types
+  // actually have, which is why the arithmetic and bitwise sets stay off a data builder. The far
+  // side must be a value: another comma section, an `fn`, or a blank would be a second operand list
+  // rather than something to compare against, so those are left to fail rather than guessed at.
+#define TACIT_COMMA_COMPARE(op)                                                                    \
+  template <class Y>                                                                               \
+    requires(not_comma<Y> && not_fn<Y> && !is_blank_v<Y>)                                          \
+  [[nodiscard]] friend constexpr auto operator op(comma_section c, Y y) {                          \
+    return tacit::detail::fn{[c, y](auto &&...x) -> decltype(auto) {                               \
+      return c(std::forward<decltype(x)>(x)...) op y;                                              \
+    }};                                                                                            \
+  }                                                                                                \
+  template <class X>                                                                               \
+    requires(not_comma<X> && not_fn<X> && !is_blank_v<X>)                                          \
+  [[nodiscard]] friend constexpr auto operator op(X x, comma_section c) {                          \
+    return tacit::detail::fn{[c, x](auto &&...y) -> decltype(auto) {                               \
+      return x op c(std::forward<decltype(y)>(y)...);                                              \
+    }};                                                                                            \
+  }
+  TACIT_COMMA_COMPARE(==) TACIT_COMMA_COMPARE(!=) TACIT_COMMA_COMPARE(<)
+  TACIT_COMMA_COMPARE(>) TACIT_COMMA_COMPARE(<=) TACIT_COMMA_COMPARE(>=)
+#undef TACIT_COMMA_COMPARE
+
+  // Growing the list. `not_comma` on the mixed forms keeps them from competing with the concatenating
+  // overload when both sides are comma sections (`(_, _), (_, _)` is a four-slot tuple).
+  template <class Y>
+    requires not_comma<Y>
+  [[nodiscard]] friend constexpr auto operator,(comma_section c, Y y) {
+    return std::apply([&](auto const &...o) { return make_comma(o..., std::move(y)); }, c.ops);
+  }
+  template <class X>
+    requires not_comma<X>
+  [[nodiscard]] friend constexpr auto operator,(X x, comma_section c) {
+    return std::apply([&](auto const &...o) { return make_comma(std::move(x), o...); }, c.ops);
+  }
+  template <class... B>
+  [[nodiscard]] friend constexpr auto operator,(comma_section c, comma_section<B...> d) {
+    return std::apply(
+        [&](auto const &...a) {
+          return std::apply([&](auto const &...b) { return make_comma(a..., b...); }, d.ops);
+        },
+        c.ops);
+  }
+};
+
+template <class... A> [[nodiscard]] constexpr comma_section<std::decay_t<A>...> make_comma(A &&...a) {
+  return {{std::forward<A>(a)...}};
+}
 } // namespace detail
 // clang-format on
 

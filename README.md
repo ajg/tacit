@@ -117,10 +117,22 @@ tacit::fanout(_.size(), _.front())  // x      -> {size(x), front(x)}
 (_.size(), _.front())               // (a, b) -> {size(a), front(b)}
 ```
 
-And a comma section is a **terminal builder**: it makes data, so it doesn't carry the vocabulary
-onward — `(_, _).size()` doesn't compile, exactly as `(_ < _).size()` doesn't, since neither
-multi-blank form is a projection. `fanout` returns an `fn` and so keeps composing; a one-slot comma
-section can be fed onward with `tacit::compose((_, 9), f)`.
+A comma section composes onward through the value it builds, keeping its arity — the vocabulary and
+the comparisons both apply to the `pair`/`tuple` that comes out:
+
+```cpp
+(_, _) == std::pair{1, 2}   // (a, b) -> {a, b} == {1, 2}
+(_, _) < std::pair{2, 0}    // (a, b) -> lexicographic, as pair defines it
+(_, _, _) < std::tuple{…}   // likewise at three
+```
+
+Comparisons only: the six are the operators `pair` and `tuple` actually have, so arithmetic and
+bitwise stay off a data builder. The result is an ordinary `fn`, so it keeps composing
+(`!((_, _) == p)`). Bound arguments only in a chained call — a blank inside one (`(_, _).foo(_)`) is
+not a further slot, exactly as it isn't for a projection, where `_.front().substr(_)` has never taken
+one: the fills belong to the operand list. Worth knowing that the member half is dormant on the
+default surface, since `std::pair` and `std::tuple` expose no name from the vocabulary table; it
+comes alive for a `TACIT_VERBS` name that they do have.
 
 ### Composition
 
