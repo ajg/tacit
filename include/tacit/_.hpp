@@ -1026,6 +1026,24 @@ struct arrow {
 inline constexpr arrow arrow_v;
 } // namespace detail
 
+// ------------------------------------------------------------------------------------------------
+// The type-level hole. One template, two duals: `of` fixes the arguments and awaits the template,
+// `as` fixes the template and awaits the arguments — the head-hole and arg-hole grains of the same
+// thing. Both take plain types and plain templates, so nothing needs lifting or quoting:
+//
+//   hole<int>::of<std::vector>            // std::vector<int>   — head is the hole
+//   hole<>::as<std::vector>::with<int>    // std::vector<int>   — head is given
+//
+// `bind<F, Args...>::with<X...>` (below) is the same arg-hole grain with holes spelled `struct _`
+// among the arguments; `as` is the spelling that needs no hole marker at all. The opt-in
+// <tacit/$.hpp> aliases this to `$`, so `$<int>::of<F>` is the short form.
+template <class... A> struct hole {
+  template <template <class...> class F> using of = F<A...>;
+  template <template <class...> class F> struct as {
+    template <class... X> using with = F<X...>;
+  };
+};
+
 // The one type `_`: the placeholder's own type. It carries the full std vocabulary (plus any
 // TACIT_VERBS / TACIT_NOUNS) and the core for the value side, and doubles as the type-level `_` — a blank
 // for `bind` and a projection namespace (`_::name::of<X>`). The value `_` (next) hides the type in
@@ -1037,6 +1055,10 @@ struct _ {
   TACIT_STD_CPOS1(TACIT_CPO1)
   TACIT_STD_FREES(TACIT_FREE1)
   TACIT_CPO2(swap, std::ranges::swap)
+  /* the type-level hole, reached through the same symbol: `_::hole<int>::of<std::vector>`. `_::`
+     is looked up considering only types, namespaces and templates, so it reaches this class past
+     the variable `_` — the same route the nouns below take. */
+  template <class... A> using hole = tacit::hole<A...>;
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_FOR_EACH(TACIT_TYPE_MEMBER, TACIT_NOUNS)
   TACIT_FOR_EACH(TACIT_TYPE_TEMPLATE, TACIT_NOUN_TEMPLATES)
@@ -1180,24 +1202,6 @@ template <class X> [[nodiscard]] constexpr auto lift(X &&x) {
   else
     return detail::held<std::remove_cvref_t<N>>{detail::normalize(static_cast<X &&>(x))};
 }
-
-// ------------------------------------------------------------------------------------------------
-// The type-level hole. One template, two duals: `of` fixes the arguments and awaits the template,
-// `as` fixes the template and awaits the arguments — the head-hole and arg-hole grains of the same
-// thing. Both take plain types and plain templates, so nothing needs lifting or quoting:
-//
-//   hole<int>::of<std::vector>            // std::vector<int>   — head is the hole
-//   hole<>::as<std::vector>::with<int>    // std::vector<int>   — head is given
-//
-// `bind<F, Args...>::with<X...>` (below) is the same arg-hole grain with holes spelled `struct _`
-// among the arguments; `as` is the spelling that needs no hole marker at all. The opt-in
-// <tacit/$.hpp> aliases this to `$`, so `$<int>::of<F>` is the short form.
-template <class... A> struct hole {
-  template <template <class...> class F> using of = F<A...>;
-  template <template <class...> class F> struct as {
-    template <class... X> using with = F<X...>;
-  };
-};
 
 template <template <class...> class F, class... Args> struct bind {
   template <class... Xs>

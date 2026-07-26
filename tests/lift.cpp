@@ -26,6 +26,14 @@ int main() {
     // plain types and plain templates throughout: nothing quoted, nothing lifted
     static_assert(std::is_same_v<tacit::hole<std::string>::of<std::vector>,
                                  std::vector<std::string>>);
+    // and the whole surface is reachable through `_` itself — `_::` looks past the variable to the
+    // class, the same route the nouns take. No `$`, no macro, no `struct` crutch.
+    static_assert(std::is_same_v<_::hole<int>::of<std::vector>, std::vector<int>>);
+    static_assert(std::is_same_v<_::hole<>::as<std::map>::with<int, char>, std::map<int, char>>);
+    static_assert(std::is_same_v<_::hole<int>::of<std::vector>,
+                                 _::hole<>::as<std::vector>::with<int>>);
+    // alongside the pre-existing type-level surface, on the same symbol
+    static_assert(std::is_same_v<_::value_type::of<std::vector<int>>, int>);
   }
 
   // ---- the lift: a plain value gets the vocabulary, applied eagerly ----
