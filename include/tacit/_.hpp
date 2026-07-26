@@ -4,7 +4,7 @@
 // Version as a comparable integer: MAJOR*10000 + MINOR*100 + PATCH. A clean-path macro (kept), so
 // downstream code can `#if TACIT_VERSION >= 200` feature-test.
 #define TACIT_VERSION_MAJOR 0
-#define TACIT_VERSION_MINOR 2
+#define TACIT_VERSION_MINOR 3
 #define TACIT_VERSION_PATCH 0
 #define TACIT_VERSION                                                                              \
   (TACIT_VERSION_MAJOR * 10000 + TACIT_VERSION_MINOR * 100 + TACIT_VERSION_PATCH)
@@ -71,6 +71,7 @@
 //  English word "placeholder" (already spoken for by std::placeholders and `auto`).
 // ============================================================================================
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <functional>
@@ -91,7 +92,6 @@
 #endif
 #endif
 #if TACIT_HAS_REFLECTION
-#include <algorithm>
 #include <meta>
 #include <string_view>
 #endif

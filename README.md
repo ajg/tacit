@@ -10,18 +10,12 @@ whatever they're later applied to — so you can hand operations to algorithms w
 
 ```cpp
 #include <tacit/_.hpp>
-#include <algorithm>  // the ranges algorithms live here, not in <tacit/_.hpp>
-#include <ranges>     // std::views
 using tacit::_;
-using namespace std::ranges;
 
-sort(nums, _ < _);                              // ascending (two blanks)
-count_if(nums, _ == 0);
-transform(words, out, _.size());
-nums | views::filter(_ != 0) | views::take(2);  // closures drop into std::views
+std::sort(nums, _ < _);
+std::count_if(nums, _ == 0);
+std::transform(words, out, _.size());
 ```
-
-Later snippets assume those two usings (`tacit::_` and `std::ranges`).
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
 reached *through* the object, and the operator sections are hidden friends found by ADL,
@@ -85,8 +79,9 @@ The closure `_` hands back is itself composable, so a projection and a section c
 naming a lambda — sections, subscript (`_[i]`), and arithmetic all build a new closure:
 
 ```cpp
-count_if(v, _.size() >= 2);        // size(x) >= 2
-sort(v, _.size() < _.size());      // order by size
+std::count_if(v, _.size() >= 2);        // size(x) >= 2
+std::sort(v, _.size() < _.size());      // order by size
+
 auto scaled = (_ + 1) * 2;         // x -> (x + 1) * 2
 auto head   = _[0];                // x -> x[0]
 ```
@@ -116,10 +111,12 @@ the closure that calls its argument. It mirrors mapping a function over data: `_
 across a set of callables, while `_()` (no args) simply invokes — handy for forcing a thunk.
 
 ```cpp
-_(3)(std::negate{});                 // -> -3
+_(3)(std::negate{}); // -> -3
 
-std::vector<std::function<void()>> thunks{ []{}, []{} };
-for_each(thunks, _());               // invoke each thunk
+// or:
+
+std::vector<std::function<void()>> thunks{};
+std::for_each(thunks, _()); // invoke each thunk
 ```
 
 ## Teach `_` your own names
@@ -129,15 +126,13 @@ domain vocabulary, pre-`#define` **`TACIT_VERBS`** (a comma list of member-call 
 include, and each name becomes first-class on the same `_`:
 
 ```cpp
-#define TACIT_VERBS deposit, balance, freeze
+#define TACIT_VERBS make_deposit, balance, is_frozen
 #include <tacit/_.hpp>
-#include <algorithm>
 using tacit::_;
-using namespace std::ranges;
 
-sort(accounts, {}, _.balance());     // now first-class on _
-_.deposit(_)(account, 100);          // blanks work here too
-count_if(accounts, _.frozen());      // also on projections and _->
+_.make_deposit(_)(account, 100);        // blanks work here too
+std::sort(accounts, {}, _.balance());   // now first-class on _
+std::count_if(accounts, _.is_frozen()); // also on projections and _->
 ```
 
 Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a hard
