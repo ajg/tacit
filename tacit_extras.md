@@ -575,6 +575,27 @@ which are order-independent). It adds no *conformance* cost, since `$` was alrea
 identifier and both spellings live in the same opt-in header. Whether a macro is an acceptable price
 for the fourth cell is the open question; the conforming core name for that cell is needed regardless.
 
+#### The symbol palette is exactly two (closed)
+
+Non-alphanumeric ASCII, tested exhaustively as identifiers:
+
+```
+whole identifier:   $ _
+rejected:           ! " # % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ ` { | } ~
+inside one (x?y):   $        (nothing else besides _)
+```
+
+The sneaky paths are sealed as well: `@` is rejected with *"character '@' cannot be specified by a
+universal character name"* — the standard forbids UCNs for basic-charset characters exactly to prevent
+this — and `@` cannot be a macro name (*"macro name must be an identifier"*). `$` *can* be a macro name,
+object-like or function-like, which is what the previous section relies on.
+
+So `_` and `$` are the complete palette: one conforming, one a GCC/Clang extension, nothing else at any
+tier. Combined with the non-ASCII survey above (legal but untypeable) and the name-kind wall (one kind
+per name), the naming question is closed — the two-symbol grid is not a preference among candidates, it
+is the only hand C++ deals. Anything beyond those two has to be a word (`blank`, `lift`) or a
+user-written alias.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
