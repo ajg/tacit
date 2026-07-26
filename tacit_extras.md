@@ -627,6 +627,41 @@ What macros cannot do, for the record: they cannot let `_` be both a *value* and
 `_ < _` and `_ < int >` are lexically identical at `_ <` and there is no paren to key on. Both
 directions were tried (object-like `_` expanding to a template name, and to a value) and both fail.
 
+#### The corner that pays: a bounded type region (leading candidate)
+
+Not clever expansion — *scoped redefinition*. `_` is an ordinary variable everywhere, and becomes the
+type-world template only inside a region delimited by two includes:
+
+```cpp
+using tacit::_;                        // an ordinary variable — scoped, shadowable
+
+static_assert((_ < _) == 7);           // the signature notation, bare
+_.size()
+
+#include <tacit/types_begin.hpp>       // #define _ tacit::hole
+using X = _<int>::of<std::vector>;
+using M = _<int, char>::of<std::map>;
+using H = _<>;
+#include <tacit/types_end.hpp>         // #undef _
+
+static_assert((_ < _) == 7);           // still the variable
+int f() { int _ = 3; return _; }       // a local named _ still works
+```
+
+Clean under `-Wall -Wextra -Werror -pedantic-errors`. This is the only design found that meets every
+constraint at once: one symbol, both worlds, bare `_ < _` at term level, `_<int>` at type level, fully
+conforming, no `$`, no reserved identifier, no non-ASCII, no pragma. The decisive property is that
+there is **no macro at term level** — `_` stays a declaration, so scoping, shadowing and locals all
+behave, which is exactly what the one-symbol macro variant above gives up.
+
+Costs and caveats. Type-level code must sit between the delimiters, and inside a region term-level `_`
+is unavailable (it would expand) — tolerable, since type aliases and expressions rarely interleave. A
+forgotten `types_end.hpp` leaks the macro into everything included after, so the pair should carry a
+sentinel and `#error` on mismatch. Plain `#define`/`#undef` does not nest; `#pragma push_macro("_")` /
+`pop_macro` does (verified working, and also fully clean under `-pedantic`), at the cost of a
+non-standard pragma — worth reaching for only if nesting or restoring an unknown prior meaning is
+needed.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
