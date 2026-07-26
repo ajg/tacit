@@ -10,7 +10,7 @@ jobs:
       matrix:
         cxx: [g++-13, clang++-18]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
         run: cmake -B build -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
       - name: Build
@@ -21,7 +21,7 @@ jobs:
   modules:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build and run `import tacit;` (clang)
         # clang picks the newest libstdc++ on the runner (gcc-14), whose <ranges> hits a type-alias
         # template redefinition under C++20 modules; pin to gcc-13's library, which is bug-free.
@@ -34,7 +34,7 @@ jobs:
   packaging:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Consume via add_subdirectory (FetchContent / CPM path)
         run: |
           cmake -S tests/packaging -B build-pkg -DCMAKE_CXX_COMPILER=g++-13
