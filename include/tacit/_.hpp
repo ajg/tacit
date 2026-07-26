@@ -531,6 +531,11 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   [[nodiscard]] friend constexpr auto operator,(X x, self s) {                                     \
     return tacit::detail::make_comma(std::move(x), s);                                             \
   }                                                                                                \
+  /* a template, not a plain friend: a non-template body with a deduced return type is compiled     \
+     with the class, which would instantiate comma_section<self, self> — and so std::tuple<_, _> —  \
+     during the header parse, ambiguating the TACIT_STD_HOLES specialisation of std::tuple declared \
+     below it. As a template it is instantiated on use, like every other comma overload. */         \
+  template <class = void>                                                                          \
   [[nodiscard]] friend constexpr auto operator,(self a, self b) {                                  \
     return tacit::detail::make_comma(a, b);                                                        \
   }                                                                                                \

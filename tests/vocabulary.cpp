@@ -151,7 +151,8 @@ int main() {
 
   // ---- type-level: the noun table ----
   {
-    static_assert(std::is_same_v<_::rep::of<std::chrono::seconds>, long long>);
+    static_assert(std::is_same_v<_::rep::of<std::chrono::seconds>,
+                                 std::chrono::seconds::rep>);  // rep is long on LP64, long long elsewhere
     static_assert(std::is_same_v<_::period::of<std::chrono::seconds>, std::ratio<1>>);
     static_assert(std::is_same_v<_::container_type::of<std::stack<int>>, std::deque<int>>);
     static_assert(std::is_same_v<_::deleter_type::of<std::unique_ptr<int>>,

@@ -119,7 +119,11 @@ int main() {
     assert((std::pair{2, 0} > (_, _))(1, 9));  // and from the left
     auto key = (_.size(), _.front()) == std::pair<std::size_t, char>{2, 'a'};
     assert(key(std::string("xy"), std::string("ab")));
-    auto t3cmp = (_, _, _) < std::tuple{1, 2, 4};
+    // `==` against a tuple, not `<`: libstdc++'s tuple operator<=> takes an unconstrained second
+    // operand and instantiates tuple_size on it, which is a hard error for any non-tuple-like left
+    // operand — a stdlib quirk that has nothing to do with tacit (`struct S{}; s < std::tuple{}`
+    // fails the same way). Comparing against a pair is unaffected, as above.
+    auto t3cmp = (_, _, _) == std::tuple{1, 2, 3};
     assert(t3cmp(1, 2, 3) && !t3cmp(1, 2, 9));
     assert((!((_, _) == std::pair{1, 2}))(9, 9));  // the result is a plain fn, so it keeps going
   }
