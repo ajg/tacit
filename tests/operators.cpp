@@ -73,6 +73,14 @@ int main() {
     assert(m == 5);
   }
 
+  // ---- comma: the pairing section, `_ , _` == (a,b) -> {a,b} ----
+  {
+    auto pr = (_, _)(3, 4);
+    assert(pr.first == 3 && pr.second == 4);
+    assert((_, 9)(5).second == 9);  // _, value  -> x -> {x, 9}
+    assert((7, _)(5).first == 7);   // value, _  -> x -> {7, x}
+  }
+
   // ---- operator-> : member of the pointee via the real arrow ----
   {
     auto p = std::make_shared<std::vector<int>>(std::vector<int>{1, 2, 3});

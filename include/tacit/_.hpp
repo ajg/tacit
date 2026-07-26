@@ -380,6 +380,21 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
     return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                  \
              { return std::forward<decltype(x)>(x) = y; }};                                        \
   }                                                                                                \
+  /* comma is the pairing section: `_ , _` == (a,b) -> {a,b}; one-sided forms bind the value. */   \
+  template <class Y>                                                                               \
+    requires tacit::detail::not_fn<Y> && (!std::is_same_v<std::remove_cvref_t<Y>, self>)          \
+  [[nodiscard]] friend constexpr auto operator,(self, Y y) {                                        \
+    return tacit::detail::fn{[y](auto&& x) { return std::pair{std::forward<decltype(x)>(x), y}; }};\
+  }                                                                                                \
+  template <class X>                                                                               \
+    requires tacit::detail::not_fn<X> && (!std::is_same_v<std::remove_cvref_t<X>, self>)          \
+  [[nodiscard]] friend constexpr auto operator,(X x, self) {                                        \
+    return tacit::detail::fn{[x](auto&& y) { return std::pair{x, std::forward<decltype(y)>(y)}; }};\
+  }                                                                                                \
+  [[nodiscard]] friend constexpr auto operator,(self, self) {                                       \
+    return [](auto&& a, auto&& b) {                                                                 \
+      return std::pair{std::forward<decltype(a)>(a), std::forward<decltype(b)>(b)}; };              \
+  }                                                                                                \
   [[nodiscard]] static constexpr auto operator()() {                                               \
     return [](auto&& x) -> decltype(auto) { return std::invoke(std::forward<decltype(x)>(x)); };   \
   }                                                                                                \

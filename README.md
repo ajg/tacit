@@ -15,11 +15,13 @@ whatever they're later applied to — so you can hand operations to algorithms w
 using tacit::_;
 using namespace std::ranges;
 
-sort(nums, _ < _);                              // ascending (two-blank comparator)
-count_if(nums, _ == 0);                         // count zeros
-transform(words, out, _.size());                // string lengths
-nums | views::filter(_ != 0) | views::take(2);  // predicate drops into std::views
+sort(nums, _ < _);                              // ascending (two blanks)
+count_if(nums, _ == 0);
+transform(words, out, _.size());
+nums | views::filter(_ != 0) | views::take(2);  // closures drop into std::views
 ```
+
+Later snippets assume those two usings (`tacit::_` and `std::ranges`).
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
 reached *through* the object, and the operator sections are hidden friends found by ADL,
@@ -72,9 +74,10 @@ combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `
 through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
-bind the argument by reference, so `std::ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|`
-is an ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives
-in `tacit::compose`, not in `|`.
+bind the argument by reference, so `for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an
+ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives in
+`tacit::compose`, not in `|`. Even comma pairs: `_ , _` is `(a, b) -> {a, b}` (a `std::pair`), with the
+one-sided forms `_ , y` / `x , _` binding the fixed side.
 
 ### Composition
 
@@ -82,17 +85,17 @@ The closure `_` hands back is itself composable, so a projection and a section c
 naming a lambda — sections, subscript (`_[i]`), and arithmetic all build a new closure:
 
 ```cpp
-std::ranges::count_if(v, _.size() >= 2);     // size(x) >= 2
-std::ranges::sort(v, _.size() < _.size());   // order by size
-auto scaled = (_ + 1) * 2;                   // x -> (x + 1) * 2
-auto head   = _[0];                          // x -> x[0]
+count_if(v, _.size() >= 2);        // size(x) >= 2
+sort(v, _.size() < _.size());      // order by size
+auto scaled = (_ + 1) * 2;         // x -> (x + 1) * 2
+auto head   = _[0];                // x -> x[0]
 ```
 
 Every single-argument closure `_` produces is a small composable `fn`; the multi-blank forms
 (`_.foo(_)`, `_ < _`) stay partial applications, where composition would not mean anything.
 
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
-`x -> size(front(x))` — handy as a projection: `std::ranges::sort(words, {}, _.front().size())`.
+`x -> size(front(x))` — handy as a projection: `sort(words, {}, _.front().size())`.
 
 For composing *arbitrary* closures left-to-right there's `tacit::compose(f, g, …)` (`x -> …(g(f(x)))`),
 behind `#define TACIT_COMBINATORS` — `compose(_ + 1, _ * 2)(3)` is `8`. (There's no `f | g` compose:
@@ -113,10 +116,10 @@ the closure that calls its argument. It mirrors mapping a function over data: `_
 across a set of callables, while `_()` (no args) simply invokes — handy for forcing a thunk.
 
 ```cpp
-_(3)(std::negate{});                 // -> -3  (applies negate to 3)
+_(3)(std::negate{});                 // -> -3
 
 std::vector<std::function<void()>> thunks{ []{}, []{} };
-std::ranges::for_each(thunks, _());  // invoke each nullary callable
+for_each(thunks, _());               // invoke each thunk
 ```
 
 ## Teach `_` your own names
@@ -132,9 +135,9 @@ include, and each name becomes first-class on the same `_`:
 using tacit::_;
 using namespace std::ranges;
 
-sort(accounts, {}, _.balance());     // _.balance() is now first-class on _
-_.deposit(_)(account, 100);          // blanks work, exactly as with the built-in vocabulary
-count_if(accounts, _.frozen());      // ... and a verb reaches _'s projections and _-> too
+sort(accounts, {}, _.balance());     // now first-class on _
+_.deposit(_)(account, 100);          // blanks work here too
+count_if(accounts, _.frozen());      // also on projections and _->
 ```
 
 Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a hard

@@ -108,8 +108,8 @@ priced in portability, to weigh against staying macro-gated at one.
 ## Operator surface (implemented)
 
 Beyond comparison/arithmetic, the sections now cover bitwise `& |`, shift/stream `<< >>`, logical
-`&& ||`; the unary operators `* - + ! ~ &` and `++ --` (pre/post); assignment `=` and compound
-`+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
+`&& ||`, comma `,`; the unary operators `* - + ! ~ &` and `++ --` (pre/post); assignment `=` and
+compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
 
 - **`&&` / `||` are two-input combiners in the two-blank form** (`_ && _` == `(a,b) -> a && b`), like
   `_.size() < _.size()`. Short-circuit is preserved (it lives in the generated body) but there is no
@@ -134,6 +134,13 @@ Beyond comparison/arithmetic, the sections now cover bitwise `& |`, shift/stream
   through `_`, the pipe-shaped `|` had little left to do, so it went back to meaning bitwise-or. Nothing
   is lost — member chaining still composes vocabulary, `tacit::compose` composes arbitrary closures —
   and the ranges pipe is untouched (`nums | views::filter(_!=0)` has a range on the left, not an `fn`).
+- **Comma pairs (not the built-in comma).** `_ , _` is `(a, b) -> std::pair{a, b}`, and `_ , y` / `x , _`
+  bind the fixed side — comma reads as the tuple/pairing glyph rather than "evaluate-and-discard". It's a
+  custom overload (not `TACIT_SECTION`, whose `x op y` body would be the built-in comma = return `y`),
+  guarded to `tacit::_` operands, so it only fires in a comma-*operator* context; argument-list and
+  init-list commas are separators and untouched. Overloading `operator,` is normally a footgun, so this
+  was added only after confirming the full suite (folds over tuples, `std::apply`, etc.) still passes.
+  Binary only for now — `_ , _ , _` needs an `fn ,` accumulator to flatten, deferred.
 - **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
 
 ## Range-adaptor verbs (implemented, opt-in `TACIT_VIEWS`)
@@ -170,6 +177,66 @@ all behind `TACIT_COMBINATORS`. Each returns an `fn`, so results keep composing.
 old `f | g` operator when `|` went back to being a bitwise section (see the operator surface note); the
 ranges pipe is unaffected (its left operand is a range, not an `fn`). `f *** g` is
 `compose(first(f), second(g))`.
+
+**More Haskell combinators** *(planned, agreed — not yet built)* — a named set to add behind
+`TACIT_COMBINATORS`, all returning an `fn` so they keep composing:
+
+- `dup(f)` = Reader's `join` / the **W** combinator — `x -> f(x, x)`. The *sanctioned* answer to
+  "repeated `_` are distinct blanks, reach for a lambda to reuse": `dup(_ * _)` is `x -> x*x`. It
+  collapses any two-blank combiner to its diagonal.
+- `on(binop, proj)` — `(a, b) -> binop(proj(a), proj(b))`. The comparator-maker; `_.size() < _.size()`
+  is an inline `on`, and `on(std::less{}, _.size())` generalizes it.
+- `flip(f)` = **C** — `(a, b) -> f(b, a)`.
+- `constant(v)` = `pure` / **K** — `x -> v`.
+- `liftA2(h, f, g)` — `x -> h(f(x), g(x))` (the practical face of Applicative `<*>` / **S**).
+- `all_of(p, q, …)` / `any_of(p, q, …)` — one-input predicate conjunction/disjunction
+  (`x -> (p(x) && …)`). Fills the gap the distinct-blank stance creates: `_ && _` is a *two-input*
+  combiner, so there is otherwise no way to spell "both predicates on the same x". Negation already
+  works — `!p` on an `fn` gives `x -> !p(x)`.
+
+Skipped as curiosities: Reader `>>=`, the pointwise function `Monoid`, `fix`. Sum-type Arrow
+(`+++` / `|||`, dispatch over `variant`/`expected`) is feasible but deferred until a real use appears.
+
+**`operator->*` = member-pointer projection** *(planned, agreed)* — give `->*` its natural meaning, not
+a combinator: `_ ->* &Widget::x` == `p -> (*p).x`, i.e. "deref, then select the pointed-to member". A
+hidden friend, ungated, works on anything dereferenceable (raw / `shared_ptr` / iterator); verified on
+g++-13 / clang-18. It's the only way to spell member-pointer projection at all, since `.*` isn't
+overloadable — the deferred "`.*` gap" filler. Clean for **data** members; **member-function** pointers
+are awkward (`obj.*pmf` is only valid as a call head, can't carry args), so methods stay with the
+`_->f(args)` arrow proxy. The value side (non-pointer) would be `_[&Widget::x]` via subscript.
+
+**Operator-glyph combinators** *(parked — explored, not adopted)* — whether a multi-character glyph
+like `_ &&& _` could carry a combinator (fanout / parallel / compose). Findings, all proven on
+g++-13 / clang-18 (probes: `invent.cpp`, `amp.cpp`, `arrow.cpp`):
+
+You cannot invent a new operator *token* — the set is fixed and maximal-munch lexing is forced. But a
+glued glyph that lexes into `[postfix ++/-- on the left] · [one binary "hinge"] · [prefix unaries on the
+right]` **can** be given an arbitrary meaning: the unary pieces return a *marker* type, and the binary
+hinge is overloaded on that marker to mean anything (ordinary uses still resolve, since overload
+resolution splits on the operand type). The mechanism, in miniature:
+
+    template <class F> struct amp { F f; };                       // marker from unary &
+    friend constexpr amp<F> operator&(fn self) { return {self.f}; }
+    template <class G> friend constexpr auto operator&&(fn f, amp<G> m) { /* fanout(f, g) */ }
+    // f &&& g  ==  f && (&g)  ==  operator&&(f, amp<g>)  ==  fanout(f, g)
+
+Three glyphs read as genuine Arrow combinators; the rest of the space (~dozens) is semantic noise:
+
+- `&&&` = `&&`·`&` → **fanout**. Chains cleanly (right-side marker → result is a plain `fn`). Cost:
+  consumes unary `&` (currently shipped as `&_` = address-of — the most expendable of the three).
+- `***` = `*`·`*`·`*` → **parallel**. Chains cleanly. Cost: consumes unary `*` = deref (`*_`), a core
+  feature — expensive.
+- `-->` = `--`·`>` → **compose**. Reads best, but the marker is on the *left* (postfix `--`), so a chain
+  `f --> g --> h` fights `>`-associativity and needs extra `marker > marker` overloads; and it consumes
+  postfix `--`.
+
+Hard exclusions: a trailing piece with no unary form is a parse error — `|||` (`||`·`|`, no unary `|`),
+`>>>` (`>>`·`>`), `<<<` all dead. Single-token glues (`++ -- && || << >> == != <= >=`) are just that
+operator. `/*` and `//` are comment traps.
+
+Verdict: real, but names win — `fanout` / `both` / `compose` are clearer and cost no operator. `&&&`
+for fanout is the *only* glyph worth reconsidering, since it chains and unary-`&` address-of is the
+cheapest thing to spend. Parked at that.
 
 **Template-argument members** — `_.get<0>()`, `_.as<int>()`. After the hybrid these go into the
 *shared* vocabulary, so they would work on `_` and every projection at once. A template parameter pack
