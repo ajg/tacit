@@ -12,15 +12,16 @@
 
 using tacit::_;
 
-// Rejection checks want a dependent context: outside one, clang reports the failed member
-// constraint as a hard error rather than folding it into the requires-expression.
-template <class U = struct tacit::_> constexpr bool chain_blank = requires(U u) { u.front().substr(_); };
-template <class U = struct tacit::_> constexpr bool arrow_blank = requires(U u) { u->substr(_); };
-template <class U = struct tacit::_> constexpr bool apply_blank = requires(U u) { u.front()._(_); };
-template <class U = struct tacit::_> constexpr bool chain_bound = requires(U u) { u.front().substr(1); };
-template <class U = struct tacit::_> constexpr bool sect_blank = requires(U u) { u.substr(_); };
-template <class U = struct tacit::_> constexpr bool sect_blanks = requires(U u) { u.replace(_, _); };
-template <class U = struct tacit::_> constexpr bool two_input_vocab = requires(U u) { (u < u).size(); };
+// Rejection checks want a dependent context: outside one, clang reports the failed member constraint
+// as a hard error rather than folding it into the requires-expression. `_` is a structural type, so
+// it rides in as a non-type parameter — no need to name its type at all.
+template <auto U = tacit::_> constexpr bool chain_blank = requires { U.front().substr(_); };
+template <auto U = tacit::_> constexpr bool arrow_blank = requires { U->substr(_); };
+template <auto U = tacit::_> constexpr bool apply_blank = requires { U.front()._(_); };
+template <auto U = tacit::_> constexpr bool chain_bound = requires { U.front().substr(1); };
+template <auto U = tacit::_> constexpr bool sect_blank = requires { U.substr(_); };
+template <auto U = tacit::_> constexpr bool sect_blanks = requires { U.replace(_, _); };
+template <auto U = tacit::_> constexpr bool two_input_vocab = requires { (U < U).size(); };
 
 int main() {
   // ---- a two-input section composes, exactly as a one-input one does ----

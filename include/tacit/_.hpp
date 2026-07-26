@@ -1034,7 +1034,7 @@ inline constexpr arrow arrow_v;
 //   hole<int>::of<std::vector>            // std::vector<int>   — head is the hole
 //   hole<>::as<std::vector>::with<int>    // std::vector<int>   — head is given
 //
-// `bind<F, Args...>::with<X...>` (below) is the same arg-hole grain with holes spelled `struct _`
+// `bind<F, Args...>::with<X...>` (below) is the same arg-hole grain with holes spelled `_::hole<>`
 // among the arguments; `as` is the spelling that needs no hole marker at all. The opt-in
 // <tacit/$.hpp> aliases this to `$`, so `$<int>::of<F>` is the short form.
 template <class... A> struct hole {
@@ -1108,12 +1108,11 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 // ------------------------------------------------------------------------------------------------
 // Type-level tacit: `_` doubles as a type-level blank for partially applying a class template into a
 // metafunction. A template argument list can't hold the *value* `_`, so the blank is written with
-// the elaborated-type-specifier `struct _` — the tag-namespace twin of the value (the old C trick
-// where a class and a variable share a name). Fixed arguments then stay plain types, no wrapper:
+// the type-level blank `_::hole<>`. Fixed arguments stay plain types, no wrapper:
 //
-//   bind<std::vector, struct _>::with<int>              // std::vector<int>
-//   bind<std::map, int, struct _>::with<double>         // std::map<int, double>   (partial)
-//   bind<std::map, struct _, struct _>::with<char, int> // std::map<char, int>
+//   bind<std::vector, _::hole<>>::with<int>              // std::vector<int>
+//   bind<std::map, int, _::hole<>>::with<double>         // std::map<int, double>  (partial)
+//   bind<std::map, _::hole<>, _::hole<>>::with<char, int> // std::map<char, int>
 //
 // The dual of bind is projection: where bind wraps the hole in an *outer* template, `_::name::of<X>`
 // pulls a *member* out of X — the type-level twin of the value-level member vocabulary. It is a
@@ -1124,8 +1123,11 @@ template <class F> [[nodiscard]] constexpr auto second(F f) {
 //   _::mapped_type::of<std::map<int, char>> // char
 //   _::value_type::of<_::value_type::of<T>> // chains by nesting (T's value_type's value_type)
 namespace detail {
-typedef struct _ blank; // handle on the blank type
-// Walk the argument list, replacing each `struct _` blank with the next of Xs...; keep fixed types.
+// The type-level blank is `hole<>` — spelled `_::hole<>` in user code. Neither `struct _` nor
+// `decltype(_)` is a hole: the placeholder's own type is the term-level object, and conflating the
+// two is what made the old spelling need a `struct` crutch in the first place.
+using blank = tacit::hole<>;
+// Walk the argument list, replacing each `hole<>` blank with the next of Xs...; keep fixed types.
 template <template <class...> class F, class Done, class Xs, class... Args> struct fill_slots;
 template <template <class...> class F, class... D, class Xs>
 struct fill_slots<F, std::tuple<D...>, Xs> {
@@ -1134,14 +1136,7 @@ struct fill_slots<F, std::tuple<D...>, Xs> {
 template <template <class...> class F, class... D, class X, class... Xr, class... A>
 struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, blank, A...>
     : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
-// ...and the spellings that avoid the `struct` crutch: the bare type-level hole, and `decltype(_)`
-// (which is `const _`, since `_` is a constexpr object).
-template <template <class...> class F, class... D, class X, class... Xr, class... A>
-struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, tacit::hole<>, A...>
-    : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
-template <template <class...> class F, class... D, class X, class... Xr, class... A>
-struct fill_slots<F, std::tuple<D...>, std::tuple<X, Xr...>, blank const, A...>
-    : fill_slots<F, std::tuple<D..., X>, std::tuple<Xr...>, A...> {};
+
 template <template <class...> class F, class... D, class Xs, class A0, class... A>
 struct fill_slots<F, std::tuple<D...>, Xs, A0, A...>
     : fill_slots<F, std::tuple<D..., A0>, Xs, A...> {};
@@ -1219,12 +1214,12 @@ template <template <class...> class F, class... Args> struct bind {
 // The general primitive that subsumes `bind` and curries BOTH grains under one op. `bind` fixes the
 // template and holes among its *arguments*; `apply` additionally lets the *template itself* be a hole.
 // Quote a template into a type with `quote<F>` (a template can't sit in a type slot unquoted — packs
-// are single-kind), then `apply<Slots...>::with<Fills...>` fills each `struct _` slot — template or
+// are single-kind), then `apply<Slots...>::with<Fills...>` fills each `hole<>` slot — template or
 // argument — left to right:
 //
-//   apply<quote<std::map>, struct _, struct _>::with<int, char>   // std::map<int,char>  (fix template)
-//   apply<struct _, int, char>::with<quote<std::map>>             // std::map<int,char>  (fix args)
-//   apply<struct _, int, struct _>::with<quote<std::map>, char>   // std::map<int,char>  (hole both)
+//   apply<quote<std::map>, _::hole<>, _::hole<>>::with<int, char> // std::map<int,char> (fix template)
+//   apply<_::hole<>, int, char>::with<quote<std::map>>            // std::map<int,char> (fix args)
+//   apply<_::hole<>, int, _::hole<>>::with<quote<std::map>, char> // std::map<int,char> (hole both)
 //
 // So `bind<F, A...>::with<X...>` is `apply<quote<F>, A...>::with<X...>`; the arg-first grain is the
 // mirror the plain `bind` can't spell. A C++26 reflection build would erase `quote<>` — templates and
@@ -1243,12 +1238,6 @@ struct apply_slots<std::tuple<Acc...>, Fills> {
 };
 template <class... Acc, class X, class... Xr, class... S>
 struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, blank, S...>
-    : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
-template <class... Acc, class X, class... Xr, class... S>
-struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, tacit::hole<>, S...>
-    : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
-template <class... Acc, class X, class... Xr, class... S>
-struct apply_slots<std::tuple<Acc...>, std::tuple<X, Xr...>, blank const, S...>
     : apply_slots<std::tuple<Acc..., X>, std::tuple<Xr...>, S...> {};
 template <class... Acc, class Fills, class S0, class... S>
 struct apply_slots<std::tuple<Acc...>, Fills, S0, S...>
@@ -1333,7 +1322,7 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 #include <utility>
 #include <vector>
 namespace std {
-#define TACIT_HOLE struct ::tacit::_ // elaborated: force type lookup past the shadowing value `_`
+#define TACIT_HOLE ::tacit::hole<> // the type-level blank; `_::hole<>` in user code
 #define TACIT_SPEC_1_1(F)                                                                          \
   template <class A0> class F<TACIT_HOLE, A0> {                                                     \
   public:                                                                                           \

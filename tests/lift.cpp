@@ -36,15 +36,15 @@ int main() {
     static_assert(std::is_same_v<_::value_type::of<std::vector<int>>, int>);
     // a hole among the arguments, with no `struct` crutch: `decltype(_)` is the placeholder's own
     // type, and `_::hole<>` the same thing spelled through the class
-    static_assert(std::is_same_v<tacit::bind<std::vector, decltype(_)>::with<int>,
+    static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
                                  std::vector<int>>);
-    static_assert(std::is_same_v<tacit::bind<std::map, int, decltype(_)>::with<char>,
+    static_assert(std::is_same_v<tacit::bind<std::map, int, _::hole<>>::with<char>,
                                  std::map<int, char>>);
     static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
                                  std::vector<int>>);
-    static_assert(std::is_same_v<tacit::apply<tacit::quote<std::map>, decltype(_), int>::with<char>,
+    static_assert(std::is_same_v<tacit::apply<tacit::quote<std::map>, _::hole<>, int>::with<char>,
                                  std::map<char, int>>);
-    static_assert(std::is_same_v<tacit::bind<std::vector, struct tacit::_>::with<int>,
+    static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
                                  std::vector<int>>);   // the older spelling still works
   }
 
