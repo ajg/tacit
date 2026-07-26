@@ -412,24 +412,52 @@ parameter-kind split that makes `bind` need `quote<F>`, surfacing on the project
 rather than one is the price of that asymmetry; the common (nullary) case pays nothing for it, and
 nothing in the std table needs the templated form, so it stays opt-in and rarely reached for.
 
-### Four quadrants: the name-kind wall (findings, not yet built)
+### Four quadrants: term/type × open/closed (design notes; not yet built)
 
-The plan is two axes — **term** (values/functions) vs **type** (types/templates), and **open** (a hole,
-subject supplied later) vs **closed** (a lift, bringing a plain C++ thing into the world so it has a
-surface at all):
+#### Where it landed
 
 ```
-              open (hole)                closed (lift)
-term          _.f()   _(x)               $(42).f()
-type          __<int>   __<>             $$<std::map>::of<X>
+                open (hole)                        closed (lift)
+  term          _      _.f()   _ < _   _(x)        $(42).f()
+  type          _<int>   _<>   ::of<F>             — not needed —
 ```
 
-`__<int>` is not "wrapping int": it is the *head* position being the hole, exactly as `_.push_back(y)`
-holes the receiver. One awaits an object, the other awaits a template — `__<int>::of<std::vector>` is
-`std::vector<int>`.
+Both open cells are **one symbol and one template**: `decltype(_)` *is* `hole<>`, so `_` is not
+analogous to the type-level hole, it is an inhabitant of one. `_<int>` is not "wrapping int" — it is
+the *head* position being the hole, exactly as `_.push_back(y)` holes the receiver. One awaits an
+object, the other awaits a template.
 
-**The wall.** A name denotes one *kind* of entity per scope, and no trick gets around it. Everything
-tried, all rejected by the compiler:
+What separates the two cells is not a name but a **region**:
+
+```cpp
+std::ranges::sort(v, _ < _);            // term — _ is an ordinary variable
+#include <tacit/types_begin.hpp>        // #define _ tacit::hole
+using X = _<int>::of<std::vector>;      // type — _ is the template
+#include <tacit/types_end.hpp>          // #undef _
+```
+
+After establishing that a name can hold only one *kind* per scope, the way through was to change scope
+in *time* rather than pick a second name. Term level keeps a real declaration rather than a macro, so
+shadowing, locals and `int _ = 3;` all still behave.
+
+The **closed/type cell is empty on purpose**: plain types and templates already enter unaided — `_<int>`
+takes a bare `int`, `::of<std::vector>` takes a bare template. Only a *value* arrives without a surface,
+so a lift is needed in the term row alone. The quadrant is three cells and a consequence.
+
+Settled by exhaustion rather than taste — the sections below are the evidence:
+
+- one kind per name, and no trick reaches it (conversions, inheritance, `constexpr` all act too late)
+- `_ < _` stops parsing the instant `_` becomes a template — the constraint that ended most branches
+- `_` and `$` are the *entire* non-alphanumeric ASCII palette; `@`/`#` are sealed, UCNs included
+- non-ASCII (`τ`, `ℓ`) is legal and *more* conforming than either, but untypeable
+- macros rescue call-shaped names, never bare ones
+
+**Still open**: the conforming name for the term lift (`$(42)` is notation over it), and whether
+`_<int>::of<F>` (head-hole) and today's `bind`/`apply` (arg-hole) collapse into one mechanism.
+
+#### The wall: one name, one kind
+
+Everything tried, all rejected by the compiler:
 
 | attempt | result |
 | --- | --- |
@@ -444,138 +472,14 @@ tried, all rejected by the compiler:
 
 Only a **class** name and an **enum** name may share a name with a variable — the C struct-hack, which
 is exactly what today's `struct _` exploits. It does not extend to templates. Conversions, inheritance
-and `constexpr` are all irrelevant here: the conflict is resolved at *name lookup*, before types or
-values exist, so there is nothing yet to convert from. No future language version changes this.
+and `constexpr` are all irrelevant: the conflict resolves at *name lookup*, before types or values
+exist, so there is nothing yet to convert from. No future language version changes this.
 
-**And the clincher:** if `_` were a template, `_ < _` stops parsing — the compiler reads `_<` as a
-template-argument list (`expected '>'`) and `_ + _` fails because a template-name is not an expression.
-Making `_` a template does not cost notation at the margin; it deletes the term world.
+**The clincher**: if `_` were a template, `_ < _` stops parsing — the compiler reads `_<` as a
+template-argument list (`expected '>'`), and `_ + _` fails because a template-name is not an
+expression. Making `_` a template does not cost notation at the margin; it deletes the term world.
 
-**Resolution.** The core declares one ordinary, conforming name — `tacit::blank<A...>` — whose bare
-specialisation is also the type of the value: `decltype(_)` *is* `blank<>`, so the two worlds are one
-template rather than a visual pun. Users who want the short spelling write one line of their own:
-
-```cpp
-template <class... A> using __ = tacit::blank<A...>;   // or _t, or Ty, or whatever
-```
-
-Verified transparent: trait matching, partial specialisations written in the alias spelling, and
-deduction through it all see `blank`. `using __ = tacit::blank<>;` is *not* enough — a plain alias gives
-only the bare hole, and `__<int>` then fails; it has to be the alias-template form.
-
-That the alias is the user's own line is the point. The library never declares a reserved or
-non-conforming identifier, so the core stays strictly conforming, and the gamble — where there is one —
-is visible in the file that takes it. `<tacit/__.hpp>` and `<tacit/$.hpp>` are then one-liners, not
-design commitments, and no macro switch is needed.
-
-**Conformance ladder**, measured rather than assumed (clang, `-std=c++23`):
-
-| spelling | legal identifier? | `-pedantic-errors` | `-Wall -Wextra -Werror` |
-| --- | --- | --- | --- |
-| `_`, `_t` | yes; reserved only *in the global namespace* | compiles | passes |
-| `__` | yes, but reserved **everywhere, for any use** | compiles | passes |
-| `$`, `$$` | **not an identifier in standard C++** | **rejected** | passes |
-
-Each is caught only by its own opt-in warning — `-Wreserved-identifier` for the underscore forms,
-`-Wdollar-in-identifier-extension` for `$` (6 hits on a two-line file).
-
-`__` is a conforming program grabbing a name the implementation owns (ill-formed, no diagnostic
-required) — it survives strict mode and only breaks if a stdlib ever claims `__`; nothing does today.
-`$` is not C++ at all and dies under `-pedantic` deterministically. Two different bets, one rung apart.
-Ordinary word-shaped names (`t`, `ty`) are worse than either: any local of the same name hides the
-template and the error lands at the *use* site (`no template named 't'`) — and the reservation that makes
-`__`/`_t` formally risky is what makes them practically collision-proof. Conformance risk and collision
-risk point in opposite directions; collision is the one that bites daily.
-
-**`$` inherits the same wall**: `$(42)` is a function and `$<std::map>` a template, so they collide
-exactly as `_` did (`redefinition of '$' as different kind of symbol`) and the closed column needs its
-own second name, `$$`. The 2×2 of names is forced by the language, not chosen.
-
-**The crossing was tried and rejected.** Giving `_` to the type world (native `_<int>`, no alias, no
-reserved name) and `$` to the term world compiles, and both crossed spellings work — `_()` and `_{}` are
-usable term holes, and `$<>` works if `$` is a variable *template* (which then costs bare `$`, the same
-either/or). It was rejected because it inverts the priority: it hands the clean native spelling to the
-rarer world and taxes the constant one, either with `$` — which makes the **core** non-conforming, not
-a quarantined header — or with `_()` at every single use (`sort(v, _() < _())`). A once-per-project
-alias line beats a per-expression tax. Worth keeping in the back pocket: `_()` / `_{}` being valid term
-holes means that if `_` ever must become a template, the term world degrades rather than vanishes.
-
-**Still open**: reconciling `blank<int>::of<F>` (head-hole) with today's `bind`/`apply` (arg-hole) so
-they are one mechanism; and the conforming core name for the closed/term cell that `$(42)` is notation
-for.
-
-#### Later pass: `_` terms / `$<>` types (in flux, superseding nothing yet)
-
-A second assignment, kept alongside the first rather than replacing it. Give `$` to the **type** world
-and leave `_` entirely to terms:
-
-```cpp
-#include <tacit/_.hpp>     // term world — strictly conforming
-#include <tacit/$.hpp>     // type world — opt-in, one line
-using tacit::_;
-
-std::ranges::sort(words, _.size() < _.size());     // terms
-auto n = std::ranges::count_if(nums, 0 < _ < 10);
-
-using Vec  = $<int>::of<std::vector>;              // types: std::vector<int>
-using Dict = $<std::string, int>::of<std::map>;    // std::map<std::string, int>
-using Hole = $<>;                                  // the bare hole
-```
-
-Verified working in one TU against the real header. It reads better than `__<int>` for two reasons.
-`$<int>` can never be misread as `_<int>` at a glance, where `__<int>` is one underscore away. And the
-*failure mode* is better: `__` defers its risk (a stdlib claims the name someday, and the collision
-lands in a stranger's TU), while `$` fails deterministically at its own line under `-pedantic`, today
-or never, and only for whoever included the header. Cost: `$` is spent, so the closed/term lift that
-was going to be `$(42)` needs another name — that cell has no hole logic at all, so it may want a word
-rather than a symbol.
-
-#### Non-ASCII identifiers (surveyed)
-
-C++23 identifiers follow UAX #31, so the palette is wider than expected. Measured on clang:
-
-| tier | characters | `-pedantic-errors` | warnings |
-| --- | --- | --- | --- |
-| letters (`XID_Start`) | `λ α τ θ Ω Σ Δ` · `ℓ ℝ ℤ ℕ ℂ ℚ ℘ ℯ` · `ª º µ ı ˆ ᵗ` · `型 値 空` | ok | 0 |
-| math notation | `∂ ∇ ∞` | **rejected** | 2, *"mathematical notation character"* |
-| not identifiers at all | `∘ ∑ √ → ⇒ □ ● ¢ £ € · ± × ÷ § © ® ° ¹ ² ½ ✓ ★ ‿ ⁀` | — | — |
-
-The first tier is the surprise: `τ<int>` or `ℓ<int>` is **strictly more conforming than either `__` or
-`$`** — fully standard, zero warnings, survives `-pedantic`, and collision-proof for a reason no ASCII
-name can match, since nobody declares a variable named `τ`. It has neither `__`'s deferred-collision
-risk nor `$`'s non-conformance. `τ` for "type" and `ℓ` for the lieutenant metaphor both read; `型<int>`
-is semantically exact and a large cultural ask. Math *symbols* are a trap that looks like the opposite:
-`∂`/`∇`/`∞` compile by default but are a clang extension, dying under `-pedantic` exactly like `$`.
-
-What rules the first tier out of the *default* spelling is untypeability, not legality — no compose key,
-no `τ`. Which is precisely what the opt-in-header architecture is for: the palette is a menu for the
-alias line, not for the core. Untested here: GCC and MSVC. C++23 mandates UTF-8 source (P2295) and
-UAX #31 identifiers (P1949), so a conforming C++23 compiler should accept the first tier; the gcc leg
-of CI would settle it before anything ships.
-
-#### `$()` and `$<>` together, via a function-like macro (works)
-
-Spending `$` on the type world seemed to cost the closed/term lift. It doesn't: a **function-like**
-macro only expands when the next token is `(`, so a macro `$(…)` and a template `$<…>` coexist in one
-TU — the name-kind wall is a *language* rule, and the preprocessor runs before it.
-
-```cpp
-template <class... A> using $ = tacit::blank<A...>;   // $<int>, $<>   — the type world
-#define $(...) tacit::lift(__VA_ARGS__)               // $(42)         — the term lift
-```
-
-Verified: `$<int>::of<std::vector>`, `$<>`, `$(x)`, `$ (x)` (space before the paren still expands, as
-function-like macros do), nested `$($(x))`, multi-argument `$(a, b)` through `__VA_ARGS__`, `$<int>{}`,
-and an unrelated `$x` identifier — all fine, and the definition order of macro vs alias is irrelevant.
-
-What it costs is what macros always cost: no ADL, no overloading, no namespace, no scope — `$(` is
-claimed for the rest of the translation unit. That argues for `<tacit/$.hpp>` being included **last**,
-which is a genuine ordering constraint (unlike the plain name collisions elsewhere in these notes,
-which are order-independent). It adds no *conformance* cost, since `$` was already an extension
-identifier and both spellings live in the same opt-in header. Whether a macro is an acceptable price
-for the fourth cell is the open question; the conforming core name for that cell is needed regardless.
-
-#### The symbol palette is exactly two (closed)
+#### The palette: `_` and `$`, and nothing else
 
 Non-alphanumeric ASCII, tested exhaustively as identifiers:
 
@@ -585,49 +489,100 @@ rejected:           ! " # % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ ` { | } ~
 inside one (x?y):   $        (nothing else besides _)
 ```
 
-The sneaky paths are sealed as well: `@` is rejected with *"character '@' cannot be specified by a
-universal character name"* — the standard forbids UCNs for basic-charset characters exactly to prevent
-this — and `@` cannot be a macro name (*"macro name must be an identifier"*). `$` *can* be a macro name,
-object-like or function-like, which is what the previous section relies on.
+The sneaky paths are sealed too: `@` is rejected with *"character '@' cannot be specified by a
+universal character name"* — the standard forbids UCNs for basic-charset characters precisely to
+prevent this — and `@` cannot be a macro name (*"macro name must be an identifier"*). `$` *can* be a
+macro name, object-like or function-like, which the macro section relies on.
 
-So `_` and `$` are the complete palette: one conforming, one a GCC/Clang extension, nothing else at any
-tier. Combined with the non-ASCII survey above (legal but untypeable) and the name-kind wall (one kind
-per name), the naming question is closed — the two-symbol grid is not a preference among candidates, it
-is the only hand C++ deals. Anything beyond those two has to be a word (`blank`, `lift`) or a
-user-written alias.
+Non-ASCII is legal but does not help. Measured on clang:
 
-#### One symbol for all four cells, via a macro (works, but forks the surface)
+| tier | characters | `-pedantic-errors` | warnings |
+| --- | --- | --- | --- |
+| letters (`XID_Start`) | `λ α τ θ Ω Σ Δ` · `ℓ ℝ ℤ ℕ ℂ ℚ ℘ ℯ` · `ª º µ ı ˆ ᵗ` · `型 値 空` | ok | 0 |
+| math notation | `∂ ∇ ∞` | **rejected** | 2, *"mathematical notation character"* |
+| not identifiers at all | `∘ ∑ √ → ⇒ □ ● ¢ £ € · ± × ÷ § © ® ° ¹ ² ½ ✓ ★ ‿ ⁀` | — | — |
 
-The preprocessor runs before the name-kind rules, and a *function-like* macro fires only on `(`. So a
-single `_` can be an alias template **and** a macro, splitting the worlds by bracket:
+The first tier is the surprise: `τ<int>` or `ℓ<int>` is **strictly more conforming than either `__` or
+`$`** — fully standard, zero warnings, and collision-proof for a reason no ASCII name can match, since
+nobody declares a variable named `τ`. What rules it out is untypeability, not legality. Math *symbols*
+are a trap that looks like the opposite: `∂`/`∇`/`∞` compile by default but are a clang extension,
+dying under `-pedantic` exactly like `$`. (GCC and MSVC untested; C++23 mandates UTF-8 source (P2295)
+and UAX #31 identifiers (P1949), so a conforming C++23 compiler should accept the first tier.)
+
+Where the ASCII candidates sit:
+
+| spelling | legal identifier? | `-pedantic-errors` | `-Wall -Wextra -Werror` |
+| --- | --- | --- | --- |
+| `_`, `_t` | yes; reserved only *in the global namespace* | compiles | passes |
+| `__` | yes, but reserved **everywhere, for any use** | compiles | passes |
+| `$`, `$$` | **not an identifier in standard C++** | **rejected** | passes |
+
+Each is caught only by its own opt-in warning — `-Wreserved-identifier` for the underscore forms,
+`-Wdollar-in-identifier-extension` for `$`. `__` is a conforming program grabbing a name the
+implementation owns (ill-formed, no diagnostic required): it survives strict mode and breaks only if a
+stdlib ever claims `__`, which none does today. `$` is not C++ at all and dies under `-pedantic`
+deterministically. Two different bets, one rung apart.
+
+Ordinary word-shaped names (`t`, `ty`) are worse than either: any local of the same name hides the
+template and the error lands at the *use* site (`no template named 't'`). The reservation that makes
+`__`/`_t` formally risky is exactly what makes them practically collision-proof — conformance risk and
+collision risk point in opposite directions, and collision is the one that bites daily.
+
+`$` inherits the same wall: `$(42)` is a function and `$<std::map>` a template, so they collide just as
+`_` did, and a second name (`$$`) would be needed. The 2×2 of names is forced by the language.
+
+#### One template, two worlds
+
+Every spelling below is notation over the same core: one ordinary, conforming name — `tacit::hole<A...>`
+(or `blank`) — whose bare specialisation is also the type of the value, so `decltype(_)` *is* `hole<>`.
+Users who want a short alias write one line of their own:
 
 ```cpp
-template <class... A> using _ = tacit::blank<A...>;              // no paren -> alias template
-#define _(...) tacit::blank<>{} __VA_OPT__(.apply(__VA_ARGS__))  // paren    -> term world
-
-_<>        // type hole          _()    // term hole
-_<int>     // type head-hole     _(3)   // term application  (__VA_OPT__ splits empty from applied)
+template <class... A> using __ = tacit::hole<A...>;   // or _t, or Ty, or whatever
 ```
 
-Angle brackets for types, parens for terms, one symbol — the original sketch's symmetry, needing no
-`$`, no reserved identifier and no non-ASCII. Verified clean under
-`-Wall -Wextra -Werror -pedantic-errors`: **fully conforming**, which nothing else in this section is.
+Verified transparent: trait matching, partial specialisations written in the alias spelling, and
+deduction through it all see `hole`. `using __ = tacit::hole<>;` is *not* enough — a plain alias gives
+only the bare hole, and `__<int>` then fails; it must be the alias-template form.
 
-Two costs. `_ < _` becomes `_() < _()` — the signature notation, taxed on every use, on the hot path.
-And `_` becomes a function-like macro claiming `_(` for the whole TU, which collides directly with
-gettext's `_("...")` — the very hazard the header already cites for not forcing a global `_`.
+That the alias is the user's own line is the point: the library never declares a reserved or
+non-conforming identifier, so the core stays strictly conforming and the gamble, where there is one, is
+visible in the file that takes it.
 
-The deeper objection is that this is a **fork, not a spelling**: one variant makes `_` a variable, the
-other a template plus a macro, so they cannot coexist in a TU and every example, test and README
-snippet diverges between them. `__` / `$` / `_t` were all aliases over one surface; this is a second
-surface. Worth keeping precisely because it is the only fully-conforming way to get the whole grid on
-one symbol — the price is paid in the term world, which is the one that matters most.
+#### What macros rescue, and what they don't
 
-What macros cannot do, for the record: they cannot let `_` be both a *value* and a template, because
-`_ < _` and `_ < int >` are lexically identical at `_ <` and there is no paren to key on. Both
-directions were tried (object-like `_` expanding to a template name, and to a value) and both fail.
+They **cannot** make `_` both a value and a template: `_ < _` and `_ < int >` are lexically identical at
+`_ <`, with no paren to key on. Both directions were tried — object-like `_` expanding to a template
+name, and to a value — and both fail. "Define it object-like *and* function-like" is a redefinition
+(`-Wmacro-redefined`, second wins), not coexistence.
 
-#### The corner that pays: a bounded type region (leading candidate)
+They **can** put a call-shaped name beside a template-shaped one, since a function-like macro fires only
+on `(`:
+
+```cpp
+template <class... A> using $ = tacit::hole<A...>;   // $<int>, $<>
+#define $(...) tacit::lift(__VA_ARGS__)              // $(42)
+```
+
+Verified across `$<int>::of<F>`, `$<>`, `$(x)`, `$ (x)` (space still expands), nested `$($(x))`,
+multi-argument `$(a, b)`, `$<int>{}`, and an unrelated `$x`; definition order is irrelevant. The cost is
+the usual macro cost — no ADL, no overloading, no namespace, no scope — so such a header must be
+included **last**, a genuine ordering constraint unlike the order-independent name collisions elsewhere.
+
+The same trick puts the *whole grid* on `_`, and it is fully conforming, but it forks the surface:
+
+```cpp
+template <class... A> using _ = tacit::hole<A...>;
+#define _(...) tacit::hole<>{} __VA_OPT__(.apply(__VA_ARGS__))
+//  _<>  _<int>  types        _()  _(3)  terms
+```
+
+Clean under `-Wall -Wextra -Werror -pedantic-errors`, and the only fully-conforming way to get all four
+cells on one symbol. Rejected anyway: `_ < _` becomes `_() < _()`, taxing the hot path; `_` as a
+function-like macro claims `_(` TU-wide, colliding with gettext's `_("...")` — the very hazard the
+header already cites; and it is a *second surface*, not a spelling, so docs, tests and examples fork.
+
+#### The corner that pays: a bounded type region
 
 Not clever expansion — *scoped redefinition*. `_` is an ordinary variable everywhere, and becomes the
 type-world template only inside a region delimited by two includes:
@@ -648,19 +603,39 @@ std::ranges::sort(v, _ < _);           // still the variable
 int f() { int _ = 3; return _; }       // a local named _ still works
 ```
 
-Clean under `-Wall -Wextra -Werror -pedantic-errors`. This is the only design found that meets every
-constraint at once: one symbol, both worlds, bare `_ < _` at term level, `_<int>` at type level, fully
-conforming, no `$`, no reserved identifier, no non-ASCII, no pragma. The decisive property is that
-there is **no macro at term level** — `_` stays a declaration, so scoping, shadowing and locals all
-behave, which is exactly what the one-symbol macro variant above gives up.
+Clean under `-Wall -Wextra -Werror -pedantic-errors`. The only design meeting every constraint at once:
+one symbol, both worlds, bare `_ < _`, `_<int>`, fully conforming, no `$`, no reserved identifier, no
+non-ASCII, no pragma. The decisive property is that there is **no macro at term level** — `_` stays a
+declaration, which is exactly what the one-symbol macro variant gives up.
 
-Costs and caveats. Type-level code must sit between the delimiters, and inside a region term-level `_`
-is unavailable (it would expand) — tolerable, since type aliases and expressions rarely interleave. A
-forgotten `types_end.hpp` leaks the macro into everything included after, so the pair should carry a
-sentinel and `#error` on mismatch. Plain `#define`/`#undef` does not nest; `#pragma push_macro("_")` /
-`pop_macro` does (verified working, and also fully clean under `-pedantic`), at the cost of a
-non-standard pragma — worth reaching for only if nesting or restoring an unknown prior meaning is
-needed.
+Costs. Type-level code must sit between the delimiters, and inside a region term-level `_` is
+unavailable — tolerable, since aliases and expressions rarely interleave. A forgotten `types_end.hpp`
+leaks the macro into everything included after, so the pair should carry a sentinel and `#error` on
+mismatch. Plain `#define`/`#undef` does not nest; `#pragma push_macro("_")` / `pop_macro` does (verified,
+also `-pedantic`-clean) at the cost of a non-standard pragma — worth reaching for only for nesting or
+restoring an unknown prior meaning.
+
+#### Spellings considered and set aside
+
+- **`t::_<int>`** (type world in its own namespace) — legal and zero-risk, but a foreign scope reads as
+  a different library rather than the same `_`, and `t` is far too common a name to expose.
+- **`::_<int>`** (global alias, value nested) — works, but forces every TU to nest its
+  `using tacit::_;` inside a namespace or function, breaking `TACIT_USING_UNDERSCORE` and every
+  file-scope example. Taxes the common path to beautify the rare one.
+- **`__<int>` / `_t<int>`** (user-written alias) — the fallback if regions prove unwieldy; see the
+  conformance ladder. Opt-in by include, so purists never see it.
+- **`$<int>`** (extension identifier, opt-in header) — shorter than a region, never misread as `_<int>`,
+  and its failure mode is better than `__`'s: it fails deterministically at its own line under
+  `-pedantic`, today or never, rather than deferring a collision into a stranger's TU years later.
+- **`_::t<int>::of<F>`** (member of `struct _`) — one symbol, fully conforming, terms untouched, and
+  consistent with the existing `_::name::of<X>` noun grammar; costs four characters of `::t`. The
+  runner-up, and the safe choice if the region delimiters prove annoying in practice.
+- **The crossing** (`_` for types, `$` for terms) — compiles, and both crossed spellings work: `_()` and
+  `_{}` are usable term holes, and `$<>` works if `$` is a variable *template* (which then costs bare
+  `$`). Rejected because it inverts the priority — the clean native spelling goes to the rarer world and
+  the constant one pays, either with `$` (making the **core** non-conforming, not a quarantined header)
+  or with `_()` at every use. Worth keeping in the back pocket: `_()`/`_{}` being valid term holes means
+  that if `_` ever must become a template, the term world degrades rather than vanishes.
 
 ### The placeholder is always `_` (decision)
 
