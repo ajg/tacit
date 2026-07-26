@@ -245,6 +245,18 @@ $(v).size()         // ranges::size(v)
 It is a **function**, not a macro — so it keeps its namespace, obeys ADL, can be written
 `tacit::$(x)`, and claims nothing from the rest of the translation unit.
 
+`$(p)->f()` reaches through a handle to the pointee, mirroring `_->f()`, for the case a value has no
+useful members of its own:
+
+```cpp
+$(ptr)->size()      // ptr->size()
+$(ptr).use_count()  // the holder's own vocabulary, on the dot surface
+```
+
+`$` is a **one-hop lift**, not a fluent facade: a call hands back the operation's natural result, not
+a wrapper, so `$(v).front()` is a `std::string&`. If you need two hops you are describing a
+computation, and that is `_`'s job — `_.front().size()(v)` says it better, and is reusable.
+
 It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
 `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift`; nothing is
 `$`-only, and a default build never sees it.

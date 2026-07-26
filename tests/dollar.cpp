@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <memory>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -46,6 +47,24 @@ int main() {
     assert(v.size() == 3);
     std::string s = "hello";
     assert($(s).substr(1, 3) == "ell");
+  }
+
+  // ---- the arrow surface: for a value with no useful members of its own ----
+  {
+    auto p = std::make_shared<std::vector<int>>(std::vector<int>{1, 2, 3});
+    assert($(p)->size() == 3);          // the POINTEE's member, via the real operator->
+    assert($(p)->at(1) == 2);
+    assert(!$(p)->empty());
+    $(p)->push_back(4);
+    assert(p->size() == 4);             // reaches the subject
+    assert($(p)->size() == _->size()(p));   // mirrors `_->` exactly
+    // while the dot surface routes the vocabulary at the holder: `get` is shared_ptr's own verb
+    assert($(p).get() == p.get());
+    assert($(p).use_count() == 1);
+    assert($(p).subject() == p);        // the escape hatch, named out of the vocabulary's way
+    auto s = std::make_unique<std::string>("hello");
+    assert($(s)->length() == 5);
+    assert($(s)->substr(1, 3) == "ell");
   }
 
   // ---- it is a function, not a macro: qualification works, and so does passing it around ----

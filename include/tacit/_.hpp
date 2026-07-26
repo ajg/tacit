@@ -1289,6 +1289,39 @@ template <class T> constexpr decltype(auto) normalize(T &&t) {
   else
     return static_cast<T &&>(t);
 }
+// The lift's arrow proxy (see `held::operator->`). Members forward through the held value's own
+// `operator->`, eagerly — the twin of the `arrow` proxy that `_->` hands back.
+template <class T> struct arrow_of {
+  T const &p;
+  [[nodiscard]] constexpr arrow_of const *operator->() const { return this; }
+#define TACIT_HELD_ARROW(NAME)                                                                     \
+  template <class... A>                                                                            \
+    requires(!(tacit::detail::is_blank_v<A> || ...)) &&                                            \
+            requires(T const &q, A &&...aa) { q->NAME(std::forward<A>(aa)...); }                   \
+  [[nodiscard]] constexpr decltype(auto) NAME(A &&...a) const {                                    \
+    return p->NAME(std::forward<A>(a)...);                                                         \
+  }                                                                                                \
+  static_assert(true)
+  TACIT_STD_MEMBERS(TACIT_HELD_ARROW)
+  TACIT_HELD_ARROW(begin);  TACIT_HELD_ARROW(end);    TACIT_HELD_ARROW(cbegin);
+  TACIT_HELD_ARROW(cend);   TACIT_HELD_ARROW(rbegin); TACIT_HELD_ARROW(rend);
+  TACIT_HELD_ARROW(size);   TACIT_HELD_ARROW(ssize);  TACIT_HELD_ARROW(empty);
+  TACIT_HELD_ARROW(data);
+  TACIT_FOR_EACH(TACIT_HELD_ARROW, TACIT_VERBS)
+#ifdef TACIT_VOCABULARY_FILE
+#define TACIT_VERB(NAME) TACIT_HELD_ARROW(NAME);
+#define TACIT_FREE(NAME, FN)
+#define TACIT_CPO(NAME, FN)
+#define TACIT_NOUN(NAME)
+#include TACIT_VOCABULARY_FILE
+#undef TACIT_VERB
+#undef TACIT_FREE
+#undef TACIT_CPO
+#undef TACIT_NOUN
+#endif
+#undef TACIT_HELD_ARROW
+};
+
 template <class T> struct held {
   T v;
 #define TACIT_HELD_MEMBER(NAME)                                                                    \
@@ -1323,7 +1356,21 @@ template <class T> struct held {
 #undef TACIT_HELD_MEMBER
 #undef TACIT_HELD_CPO1
 #undef TACIT_HELD_FREE1
-  [[nodiscard]] constexpr T const &get() const noexcept { return v; }   // the subject, unchanged
+  // `$(p)->size()` — the arrow surface of the lift, for the case a value has no useful members of
+  // its own: a smart pointer, an iterator, an optional-ish handle. It mirrors `_->size()` exactly,
+  // reaching the pointee through the *real* `operator->` and calling plain members there (no CPO
+  // routing — the pointee has the members), so `$(p)->f()` is `p->f()` and nothing more.
+  //
+  // `operator->` hands back a proxy by value whose own `operator->` returns itself; the compiler
+  // repeats `->` until it reaches a raw pointer, and the temporary lives to the end of the full
+  // expression. This is the usual proxy-arrow idiom, and it is why the lift needs no storage for it.
+  [[nodiscard]] constexpr auto operator->() const { return arrow_of<T>{v}; }
+
+  // The held subject, unchanged. NOT named `get`: `get` is in the vocabulary (shared_ptr, unique_ptr,
+  // future), and an accessor of that name would shadow it, so `$(p).get()` would hand back the
+  // pointer holder rather than `p.get()`. Any accessor added here must stay out of the vocabulary's
+  // namespace for the same reason — the rule `$(x).f() == _.f()(x)` has to hold for *every* name.
+  [[nodiscard]] constexpr T const &subject() const noexcept { return v; }
 };
 template <class T> held(T) -> held<T>;
 } // namespace detail
