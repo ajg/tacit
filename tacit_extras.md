@@ -414,35 +414,33 @@ nothing in the std table needs the templated form, so it stays opt-in and rarely
 
 ### Four quadrants: term/type × open/closed (design notes; not yet built)
 
-#### Where it landed
+#### Where it landed (decision)
 
 ```
                 open (hole)                        closed (lift)
   term          _      _.f()   _ < _   _(x)        $(42).f()
-  type          _<int>   _<>   ::of<F>             — not needed —
+  type          $<int>   $<>   ::of<F>             — not needed —
 ```
 
-Both open cells are **one symbol and one template**: `decltype(_)` *is* `hole<>`, so `_` is not
-analogous to the type-level hole, it is an inhabitant of one. `_<int>` is not "wrapping int" — it is
-the *head* position being the hole, exactly as `_.push_back(y)` holes the receiver. One awaits an
-object, the other awaits a template.
+`_` stays **macro-free and term-only**: an ordinary variable, so `_ < _`, `_.f()` and the application
+form `_(x)` all survive untouched, along with scoping, shadowing and any local named `_`. The type
+world is `$`, an alias template over the core's `tacit::hole<A...>`; `decltype(_)` is `hole<>`, so the
+two worlds are still one template even though they no longer share a spelling. The term lift `$(42)` is
+a **function-like macro**, which coexists with `$<int>` for free — a function-like macro fires only on
+`(`, and `$<int>` has no paren. No probe, no region, no delimiters.
 
-What separates the two cells is not a name but a **region**:
+**`_<T>` is given up.** That is the whole cost, and it is a cost in symmetry rather than in practice:
+the head-hole is rarely what you reach for, and everything it expressed is available as `$<T>`. The
+grid stays orthogonal in meaning; only the notation stops rhyming.
 
-```cpp
-std::ranges::sort(v, _ < _);            // term — _ is an ordinary variable
-#include <tacit/types_begin.hpp>        // #define _ tacit::hole
-using X = _<int>::of<std::vector>;      // type — _ is the template
-#include <tacit/types_end.hpp>          // #undef _
-```
-
-After establishing that a name can hold only one *kind* per scope, the way through was to change scope
-in *time* rather than pick a second name. Term level keeps a real declaration rather than a macro, so
-shadowing, locals and `int _ = 3;` all still behave.
-
-The **closed/type cell is empty on purpose**: plain types and templates already enter unaided — `_<int>`
+The **closed/type cell is empty on purpose**: plain types and templates already enter unaided — `$<int>`
 takes a bare `int`, `::of<std::vector>` takes a bare template. Only a *value* arrives without a surface,
-so a lift is needed in the term row alone. The quadrant is three cells and a consequence.
+so a lift is needed in the term row alone. Three cells and a consequence.
+
+Because `$` is an extension identifier, the type world ships as an opt-in `<tacit/$.hpp>` and the core
+must keep a conforming spelling of the same template (`tacit::hole<int>::of<F>`, or a user's own
+`_t` alias) so a `-pedantic` project is never locked out. The `$(…)` macro makes that header
+include-last.
 
 Settled by exhaustion rather than taste — the sections below are the evidence:
 
@@ -452,8 +450,8 @@ Settled by exhaustion rather than taste — the sections below are the evidence:
 - non-ASCII (`τ`, `ℓ`) is legal and *more* conforming than either, but untypeable
 - macros rescue call-shaped names, never bare ones
 
-**Still open**: the conforming name for the term lift (`$(42)` is notation over it), and whether
-`_<int>::of<F>` (head-hole) and today's `bind`/`apply` (arg-hole) collapse into one mechanism.
+**Still open**: whether `$<int>::of<F>` (head-hole) and today's `bind`/`apply` (arg-hole) collapse into
+one mechanism, and whether the term lift is worth a macro at all versus a plain word in the core.
 
 #### The wall: one name, one kind
 
@@ -582,38 +580,41 @@ cells on one symbol. Rejected anyway: `_ < _` becomes `_() < _()`, taxing the ho
 function-like macro claims `_(` TU-wide, colliding with gettext's `_("...")` — the very hazard the
 header already cites; and it is a *second surface*, not a spelling, so docs, tests and examples fork.
 
-#### The corner that pays: a bounded type region
+#### Preprocessor techniques, and their limits
 
-Not clever expansion — *scoped redefinition*. `_` is an ordinary variable everywhere, and becomes the
-type-world template only inside a region delimited by two includes:
+The preprocessor's *only* lookahead is "is the next token `(`". Every Boost.PP idiom — `CAT` dispatch,
+`IS_BEGIN_PARENS`, the probe/`CHECK` family — is built on that one bit, and it is also the exact reason
+a macro can never split `_ < _` from `_ < int >`: no paren to key on.
 
-```cpp
-using tacit::_;                        // an ordinary variable — scoped, shadowable
+What it does buy, all verified:
 
-std::ranges::sort(v, _ < _);           // the signature notation, bare
-std::ranges::count_if(v, _.size() > 2);
+- **A call-shaped name beside a template-shaped one.** `#define $(...)` and `template <class... A> using
+  $ = …` coexist, since the macro fires only on `(`. This is what the decision above rests on, and it
+  needs no probe at all.
+- **Token pasting eats a leading token.** `a##__VA_ARGS__` joins with the *first* token of the argument,
+  so a macro can consume a leading `_` and leave the rest intact:
+  `_T(_<int>::of<std::vector>)` → `tacit::hole<int>::of<std::vector>`. `CAT` must be variadic, since
+  `<int, char>` contains commas the preprocessor treats as argument separators. Limits: only the
+  *leading* `_` is replaced, so nested holes (`_T(_<_<int>>)`) fail, and input not starting with `_`
+  produces a garbage identifier. Scanning arbitrary token soup for every `_` is not something the
+  preprocessor can do — Boost.PP rewrites only *enumerated* structures (sequences, tuples).
+- **Paren-probe dispatch**, if one macro must serve both worlds:
+  `_(int)` → `hole<int>`, `_((3))` → the application form, chosen by `IS_PAREN` on the first argument.
+  Verified working end to end. Not needed under the decision above, since `$<…>` and `$(…)` already
+  differ by bracket.
 
-#include <tacit/types_begin.hpp>       // #define _ tacit::hole
-using X = _<int>::of<std::vector>;
-using M = _<int, char>::of<std::map>;
-using H = _<>;
-#include <tacit/types_end.hpp>         // #undef _
+Two subtleties cost real time and are easy to hit again:
 
-std::ranges::sort(v, _ < _);           // still the variable
-int f() { int _ = 3; return _; }       // a local named _ still works
-```
+- `IS_PAREN` must probe **only the first argument** — a single-parameter version overflows on
+  `_(int, char)`.
+- The probe name must be juxtaposed with an **already-expanded** token, never with a macro *call*.
+  `PROBE FIRST(...)` silently yields 0 forever, because when the scanner considers `PROBE` the next
+  token is an identifier, not `(`. Split it: `IS_PAREN(...)` → `IS_PAREN_I(FIRST(...))`. This is why
+  `BOOST_PP_IS_BEGIN_PARENS` takes its argument directly.
 
-Clean under `-Wall -Wextra -Werror -pedantic-errors`. The only design meeting every constraint at once:
-one symbol, both worlds, bare `_ < _`, `_<int>`, fully conforming, no `$`, no reserved identifier, no
-non-ASCII, no pragma. The decisive property is that there is **no macro at term level** — `_` stays a
-declaration, which is exactly what the one-symbol macro variant gives up.
-
-Costs. Type-level code must sit between the delimiters, and inside a region term-level `_` is
-unavailable — tolerable, since aliases and expressions rarely interleave. A forgotten `types_end.hpp`
-leaks the macro into everything included after, so the pair should carry a sentinel and `#error` on
-mismatch. Plain `#define`/`#undef` does not nest; `#pragma push_macro("_")` / `pop_macro` does (verified,
-also `-pedantic`-clean) at the cost of a non-standard pragma — worth reaching for only for nesting or
-restoring an unknown prior meaning.
+All of this dissolves under C++26 reflection: `^^int` is a *value*, so a single `template <auto...>`
+hole accepts `hole<^^int>` and `hole<3>` alike — one template, no probe, no marker parens, no macro.
+The preprocessor work here is the C++23 stand-in for that.
 
 #### Spellings considered and set aside
 
@@ -630,6 +631,11 @@ restoring an unknown prior meaning.
 - **`_::t<int>::of<F>`** (member of `struct _`) — one symbol, fully conforming, terms untouched, and
   consistent with the existing `_::name::of<X>` noun grammar; costs four characters of `::t`. The
   runner-up, and the safe choice if the region delimiters prove annoying in practice.
+- **Bounded type region** (`#include <tacit/types_begin.hpp>` … `types_end.hpp`, with `_` `#define`d to
+  the hole inside) — the only design that kept *both* `_ < _` and `_<int>`, fully conforming, with no
+  macro at term level. Set aside because per-region `#include` delimiters are too heavy for something as
+  ordinary as writing a type, and a forgotten close leaks the macro into everything downstream.
+  `#pragma push_macro`/`pop_macro` nests if it is ever revisited.
 - **The crossing** (`_` for types, `$` for terms) — compiles, and both crossed spellings work: `_()` and
   `_{}` are usable term holes, and `$<>` works if `$` is a variable *template* (which then costs bare
   `$`). Rejected because it inverts the priority — the clean native spelling goes to the rarer world and
