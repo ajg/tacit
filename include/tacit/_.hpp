@@ -1416,6 +1416,30 @@ public:
 } // namespace std
 #endif // TACIT_STD_HOLES
 
+// ------------------------------------------------------------------------------------------------
+// `$` — the term wrapper (opt-in, `#define TACIT_DOLLAR` before including).
+//
+//     $(42).abs()        $("abc").length()        $(v).size()
+//
+// It is exactly `tacit::lift`, under a shorter name: `$(x).f(a...)` is `_.f(a...)(normalize(x))`, the
+// closed cell of the term world. `$` is spelled as a *function*, not a macro — the macro form only
+// existed to let one name serve both `$<T>` and `$(x)`, and `$` is term-only now. A function keeps
+// its namespace, obeys ADL, can be qualified `tacit::$(x)`, and claims nothing from the rest of the
+// translation unit, so this header has no include-order rule.
+//
+// WHY IT IS GATED. `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
+// `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift`; nothing is
+// `$`-only. The gate keeps a strictly-conforming default and makes the trade a per-project choice.
+// (It lives here while the surface settles; it wants its own header once it does.)
+#ifdef TACIT_DOLLAR
+namespace tacit {
+template <class X> [[nodiscard]] constexpr auto $(X &&x) { return lift(static_cast<X &&>(x)); }
+} // namespace tacit
+#ifdef TACIT_USING_UNDERSCORE
+using tacit::$;
+#endif
+#endif
+
 // Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>`
 // alone suffices (no `using tacit::_;`). Off by default — a header must not
 // force a global `_` on every includer (gettext's `#define _`, C++26's

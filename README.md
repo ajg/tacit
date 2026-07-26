@@ -252,24 +252,27 @@ The vocabulary grew a third dispatch kind for this: beside member calls and the 
 are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `ceil`, `round`, `log`, `isnan`, …)
 route to `std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
 
-### The `$` spelling (opt-in)
+### The `$` wrapper (opt-in)
 
-`<tacit/$.hpp>` is two lines of notation over the above:
+`$` is `tacit::lift` under a shorter name, behind `#define TACIT_DOLLAR`:
 
 ```cpp
-#include <tacit/$.hpp>                        // last — see below
-$<int>::of<std::vector>            // tacit::hole<int>::of<std::vector>
-$(-42).abs()                       // tacit::lift(-42).abs()
+#define TACIT_DOLLAR
+#include <tacit/_.hpp>
+using tacit::_;
+using tacit::$;
+
+$(-42).abs()        // 42
+$("abc").length()   // 3
+$(v).size()         // ranges::size(v)
 ```
 
-The alias and the macro share the name because a function-like macro fires only on `(`, and `$<…>` has
-no paren. `$` never appears bare, which is why it can be a template where `_` cannot — the name-kind
-rule only bites a name that must also stand alone, and `_` must.
+It is a **function**, not a macro — so it keeps its namespace, obeys ADL, can be written
+`tacit::$(x)`, and claims nothing from the rest of the translation unit.
 
-It is opt-in because **`$` is not an identifier in standard C++** — a GCC/Clang extension, rejected
-under `-pedantic-errors`. Everything it spells is reachable conformingly through `tacit::hole` and
-`tacit::lift`; nothing is `$`-only. Include it **last** (the macro claims `$(` for the rest of the
-translation unit) and only in application code, never in a public header.
+It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
+`-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift`; nothing is
+`$`-only, and a default build never sees it.
 
 ## Teach `_` your own names
 
