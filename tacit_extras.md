@@ -635,8 +635,8 @@ type-world template only inside a region delimited by two includes:
 ```cpp
 using tacit::_;                        // an ordinary variable — scoped, shadowable
 
-static_assert((_ < _) == 7);           // the signature notation, bare
-_.size()
+std::ranges::sort(v, _ < _);           // the signature notation, bare
+std::ranges::count_if(v, _.size() > 2);
 
 #include <tacit/types_begin.hpp>       // #define _ tacit::hole
 using X = _<int>::of<std::vector>;
@@ -644,7 +644,7 @@ using M = _<int, char>::of<std::map>;
 using H = _<>;
 #include <tacit/types_end.hpp>         // #undef _
 
-static_assert((_ < _) == 7);           // still the variable
+std::ranges::sort(v, _ < _);           // still the variable
 int f() { int _ = 3; return _; }       // a local named _ still works
 ```
 
