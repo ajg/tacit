@@ -417,10 +417,17 @@ nothing in the std table needs the templated form, so it stays opt-in and rarely
 #### Where it landed (decision)
 
 ```
-                open (hole)                        closed (lift)
-  term          _      _.f()   _ < _   _(x)        $(42).f()
-  type          $<int>   $<>   ::of<F>             — not needed —
+                open (hole)                     closed (given)
+  term          _    _.f()  _ < _  _(x)         $(42).f()
+  type          $<int>::of<F>                   $<>::as<F>::with<X>
 ```
+
+**The assignment is derived, not chosen.** The name-kind wall only bites a name that must be usable
+*bare*. `_` must be — `_ < _`, `_.f()`, `_(x)`, `_[i]` — which forces it to be a variable, which forbids
+it from ever being a template. `$` is never bare: every use carries a bracket, `$<…>` or `$(…)`. So it
+is free to be an alias template *and* a function-like macro at once, since one keys on `<` and the
+other on `(`. `$` therefore needs no variable, no storage and no ADL surface — it is purely a name in
+two syntactic slots, and the closest thing to a standalone `$` is `$<>`, which still wears its brackets.
 
 `_` stays **macro-free and term-only**: an ordinary variable, so `_ < _`, `_.f()` and the application
 form `_(x)` all survive untouched, along with scoping, shadowing and any local named `_`. The type
@@ -433,9 +440,21 @@ a **function-like macro**, which coexists with `$<int>` for free — a function-
 the head-hole is rarely what you reach for, and everything it expressed is available as `$<T>`. The
 grid stays orthogonal in meaning; only the notation stops rhyming.
 
-The **closed/type cell is empty on purpose**: plain types and templates already enter unaided — `$<int>`
-takes a bare `int`, `::of<std::vector>` takes a bare template. Only a *value* arrives without a surface,
-so a lift is needed in the term row alone. Three cells and a consequence.
+All four cells are occupied, and the two type cells are **duals of one template**: `of` fixes the
+arguments and awaits the template, `as` fixes the template and awaits the arguments —
+
+```cpp
+$<int>::of<std::vector>            // std::vector<int>   head is the hole
+$<>::as<std::vector>::with<int>    // std::vector<int>   head is given
+static_assert(std::is_same_v<$<int>::of<std::vector>, $<>::as<std::vector>::with<int>>);
+```
+
+which settles what looked like an open question: today's `bind`/`apply` is not a separate mechanism to
+reconcile with the head-hole — it *is* the closed/type cell, reached through `as`. Both work on plain
+types and plain templates, with no `quote<>` and no lifting.
+
+So the whole design is one line: **one template `$<A...>`; `_` is its bare instance at value level
+(`decltype(_)` is `$<>`), `of`/`as` are its two appliers, `$(…)` lifts a plain value.**
 
 Because `$` is an extension identifier, the type world ships as an opt-in `<tacit/$.hpp>` and the core
 must keep a conforming spelling of the same template (`tacit::hole<int>::of<F>`, or a user's own
@@ -450,8 +469,10 @@ Settled by exhaustion rather than taste — the sections below are the evidence:
 - non-ASCII (`τ`, `ℓ`) is legal and *more* conforming than either, but untypeable
 - macros rescue call-shaped names, never bare ones
 
-**Still open**: whether `$<int>::of<F>` (head-hole) and today's `bind`/`apply` (arg-hole) collapse into
-one mechanism, and whether the term lift is worth a macro at all versus a plain word in the core.
+**Still open**: whether the term lift is worth a macro at all versus a plain word in the core. What was
+given up is only the *spelling* `_<T>` — the concept survives as `$<T>` — leaving one scar: the open
+column uses two symbols, `_` for terms and `$<>` for types, which is irreducible, since one name cannot
+be both a variable and a template.
 
 #### The wall: one name, one kind
 
