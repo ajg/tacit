@@ -98,9 +98,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdlib>
 #include <cstddef>
 #include <functional>
 #include <ranges>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -615,6 +618,22 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   /* regex    */ X(position); X(prefix); X(suffix); X(ready);                                      \
   /* source   */ X(file_name); X(function_name); X(line); X(column);
 
+//  Free-function forwarder: the third dispatch kind, beside member calls and the range CPOs. Some
+//  vocabulary is spelled as a free function in the standard library and can never be a member — a
+//  bare `-42` has no members at all — so those names route to `std::` instead of to `x.NAME(...)`.
+#define TACIT_FREE1(NAME, FN)                                                                      \
+  [[nodiscard]] static constexpr auto NAME() {                                                     \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
+             requires requires(X&& xx) { FN(xx); } { return FN(std::forward<X>(x)); }};            \
+  }
+
+//  The free-function table: names that are free functions in std, kept small and numeric-leaning.
+#define TACIT_STD_FREES(X)                                                                         \
+  X(abs, std::abs)     X(sqrt, std::sqrt)   X(cbrt, std::cbrt)   X(floor, std::floor)              \
+  X(ceil, std::ceil)   X(round, std::round) X(trunc, std::trunc) X(exp, std::exp)                  \
+  X(log, std::log)     X(log2, std::log2)   X(log10, std::log10) X(signbit, std::signbit)          \
+  X(isnan, std::isnan) X(isinf, std::isinf) X(isfinite, std::isfinite)
+
 #define TACIT_STD_CPOS1(X)                                                                         \
   X(begin,  std::ranges::begin)  X(end,   std::ranges::end)                                        \
   X(cbegin, std::ranges::cbegin) X(cend,  std::ranges::cend)                                       \
@@ -850,6 +869,14 @@ template <class F, class Last> struct fn {
   TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
   TACIT_FOR_EACH(TACIT_FN_MEMBER, TACIT_VERBS)
   TACIT_STD_CPOS1(TACIT_FN_CPO1)
+#define TACIT_FN_FREE1(NAME, FN)                                                                   \
+  [[nodiscard]] constexpr auto NAME() const {                                                      \
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)                   \
+             requires requires(X &&...xx) { FN(std::declval<fn const &>()(std::forward<X>(xx)...)); }\
+             { return FN(g(std::forward<X>(x)...)); }};                                            \
+  }
+  TACIT_STD_FREES(TACIT_FN_FREE1)
+#undef TACIT_FN_FREE1
   // Range-adaptor verbs compose through the projection, so a pipeline keeps chaining (opt-in).
 #ifdef TACIT_VIEWS
 #define TACIT_FN_VIEW(NAME, ADAPT)                                                                  \
@@ -1008,6 +1035,7 @@ struct _ {
   TACIT_STD_MEMBERS(TACIT_MEMBER)
   TACIT_FOR_EACH(TACIT_MEMBER, TACIT_VERBS)
   TACIT_STD_CPOS1(TACIT_CPO1)
+  TACIT_STD_FREES(TACIT_FREE1)
   TACIT_CPO2(swap, std::ranges::swap)
   TACIT_STD_TYPE_MEMBERS(TACIT_TYPE_MEMBER)
   TACIT_FOR_EACH(TACIT_TYPE_MEMBER, TACIT_NOUNS)
@@ -1088,6 +1116,88 @@ template <template <class...> class F, class... D, class Xs, class A0, class... 
 struct fill_slots<F, std::tuple<D...>, Xs, A0, A...>
     : fill_slots<F, std::tuple<D..., A0>, Xs, A...> {};
 } // namespace detail
+
+// ------------------------------------------------------------------------------------------------
+// The term-level lift: `lift(x)` gives a plain value the vocabulary it may not have as members, and
+// applies it eagerly. The rule is exactly
+//
+//     lift(x).f(a...)   ==   _.f(a...)(normalize(x))
+//
+// so the closed cell is the open one applied now — same table, same dispatch (member, range CPO, or
+// free function), no second vocabulary to keep in step. It is what reaches operations a bare value
+// has no members for: `lift(-42).abs()` is 42, `lift(v).size()` is `ranges::size(v)` even where
+// `v.size()` does not exist.
+//
+// NORMALIZE. A string literal's raw type is never what you mean: `const char[4]` has no members at
+// all, and `ranges::size("abc")` is 4 because it counts the NUL. So a char array is normalized to
+// `string_view` on the way in, making `lift("abc").length()` and `.size()` both 3. Everything else
+// is taken as it is: lvalues are held by reference (no copy), rvalues by value (no dangling).
+//
+// The result of a lifted call is the operation's own natural result, not another lift — `.size()`
+// hands back a `size_t`, not a wrapper needing unwrapping. Chaining therefore continues on that
+// result's own type; re-lift with `lift(...)` when the next hop needs the vocabulary again.
+namespace detail {
+template <class T> constexpr decltype(auto) normalize(T &&t) {
+  using U = std::remove_cvref_t<T>;
+  if constexpr (std::is_array_v<U> &&
+                std::is_same_v<std::remove_cv_t<std::remove_extent_t<U>>, char>)
+    return std::string_view(t);
+  else
+    return static_cast<T &&>(t);
+}
+template <class T> struct held {
+  T v;
+#define TACIT_HELD_MEMBER(NAME)                                                                    \
+  template <class... A>                                                                            \
+    requires(!(tacit::detail::is_blank_v<A> || ...)) &&                                            \
+            requires(T const &x, A &&...aa) { x.NAME(std::forward<A>(aa)...); }                    \
+  [[nodiscard]] constexpr decltype(auto) NAME(A &&...a) const {                                    \
+    return v.NAME(std::forward<A>(a)...);                                                          \
+  }                                                                                                \
+  static_assert(true)
+#define TACIT_HELD_CPO1(NAME, CPO)                                                                 \
+  [[nodiscard]] constexpr decltype(auto) NAME() const                                              \
+    requires requires(T const &x) { CPO(x); } { return CPO(v); }
+#define TACIT_HELD_FREE1(NAME, FN)                                                                 \
+  [[nodiscard]] constexpr decltype(auto) NAME() const                                              \
+    requires requires(T const &x) { FN(x); } { return FN(v); }
+  TACIT_STD_MEMBERS(TACIT_HELD_MEMBER)
+  TACIT_FOR_EACH(TACIT_HELD_MEMBER, TACIT_VERBS)
+  TACIT_STD_CPOS1(TACIT_HELD_CPO1)
+  TACIT_STD_FREES(TACIT_HELD_FREE1)
+#undef TACIT_HELD_MEMBER
+#undef TACIT_HELD_CPO1
+#undef TACIT_HELD_FREE1
+  [[nodiscard]] constexpr T const &get() const noexcept { return v; }   // the subject, unchanged
+};
+template <class T> held(T) -> held<T>;
+} // namespace detail
+
+template <class X> [[nodiscard]] constexpr auto lift(X &&x) {
+  using N = decltype(detail::normalize(static_cast<X &&>(x)));
+  if constexpr (std::is_lvalue_reference_v<X> && std::is_lvalue_reference_v<N>)
+    return detail::held<std::remove_reference_t<N> &>{detail::normalize(static_cast<X &&>(x))};
+  else
+    return detail::held<std::remove_cvref_t<N>>{detail::normalize(static_cast<X &&>(x))};
+}
+
+// ------------------------------------------------------------------------------------------------
+// The type-level hole. One template, two duals: `of` fixes the arguments and awaits the template,
+// `as` fixes the template and awaits the arguments — the head-hole and arg-hole grains of the same
+// thing. Both take plain types and plain templates, so nothing needs lifting or quoting:
+//
+//   hole<int>::of<std::vector>            // std::vector<int>   — head is the hole
+//   hole<>::as<std::vector>::with<int>    // std::vector<int>   — head is given
+//
+// `bind<F, Args...>::with<X...>` (below) is the same arg-hole grain with holes spelled `struct _`
+// among the arguments; `as` is the spelling that needs no hole marker at all. The opt-in
+// <tacit/$.hpp> aliases this to `$`, so `$<int>::of<F>` is the short form.
+template <class... A> struct hole {
+  template <template <class...> class F> using of = F<A...>;
+  template <template <class...> class F> struct as {
+    template <class... X> using with = F<X...>;
+  };
+};
 
 template <template <class...> class F, class... Args> struct bind {
   template <class... Xs>
@@ -1290,6 +1400,8 @@ using tacit::_;
 #undef TACIT_VIEW_VERBS
 #undef TACIT_CPO1
 #undef TACIT_CPO2
+#undef TACIT_FREE1
+#undef TACIT_STD_FREES
 #undef TACIT_SECTION
 #undef TACIT_UNARY
 #undef TACIT_UNARY_POST

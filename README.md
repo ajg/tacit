@@ -205,6 +205,59 @@ std::vector<std::function<void()>> thunks{};
 std::for_each(thunks, _()); // invoke each thunk
 ```
 
+## Values and types
+
+`_` is a hole in the **term** world, awaiting its subject. Two things sit beside it: a hole in the
+**type** world, and a way to hand either world a subject it already has.
+
+`tacit::hole<A...>` is the type-level twin, with two duals — `of` fixes the arguments and awaits the
+template, `as` fixes the template and awaits the arguments:
+
+```cpp
+hole<int>::of<std::vector>            // std::vector<int>      head is the hole
+hole<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
+```
+
+Plain types and plain templates throughout — nothing quoted, nothing wrapped.
+
+`tacit::lift(x)` is the term-level counterpart: it gives a plain value the vocabulary it may not have
+as members, and applies it **eagerly**. The rule is exactly `lift(x).f(a…)` == `_.f(a…)(x)`, so there
+is one vocabulary and one dispatch, not two to keep in step:
+
+```cpp
+lift(v).size()        // ranges::size(v) — even where v.size() doesn't exist
+lift(-42).abs()       // 42 — a bare value has no members at all
+lift("abc").length()  // 3
+```
+
+Two things worth knowing. A string literal's raw type is never what you mean — `const char[4]` has no
+members, and `ranges::size("abc")` is **4** because it counts the NUL — so a char array is normalized
+to `string_view` on the way in. And a lifted call hands back the operation's own result, not a wrapper,
+so chaining continues on that result's own type.
+
+The vocabulary grew a third dispatch kind for this: beside member calls and the range CPOs, names that
+are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `ceil`, `round`, `log`, `isnan`, …)
+route to `std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
+
+### The `$` spelling (opt-in)
+
+`<tacit/$.hpp>` is two lines of notation over the above:
+
+```cpp
+#include <tacit/$.hpp>                        // last — see below
+$<int>::of<std::vector>            // tacit::hole<int>::of<std::vector>
+$(-42).abs()                       // tacit::lift(-42).abs()
+```
+
+The alias and the macro share the name because a function-like macro fires only on `(`, and `$<…>` has
+no paren. `$` never appears bare, which is why it can be a template where `_` cannot — the name-kind
+rule only bites a name that must also stand alone, and `_` must.
+
+It is opt-in because **`$` is not an identifier in standard C++** — a GCC/Clang extension, rejected
+under `-pedantic-errors`. Everything it spells is reachable conformingly through `tacit::hole` and
+`tacit::lift`; nothing is `$`-only. Include it **last** (the macro claims `$(` for the rest of the
+translation unit) and only in application code, never in a public header.
+
 ## Teach `_` your own names
 
 `_` is the only placeholder — there is no separate derived object to learn or spell. To hand it a
