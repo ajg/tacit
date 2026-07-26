@@ -504,6 +504,55 @@ holes means that if `_` ever must become a template, the term world degrades rat
 they are one mechanism; and the conforming core name for the closed/term cell that `$(42)` is notation
 for.
 
+#### Later pass: `_` terms / `$<>` types (in flux, superseding nothing yet)
+
+A second assignment, kept alongside the first rather than replacing it. Give `$` to the **type** world
+and leave `_` entirely to terms:
+
+```cpp
+#include <tacit/_.hpp>     // term world — strictly conforming
+#include <tacit/$.hpp>     // type world — opt-in, one line
+using tacit::_;
+
+std::ranges::sort(words, _.size() < _.size());     // terms
+auto n = std::ranges::count_if(nums, 0 < _ < 10);
+
+using Vec  = $<int>::of<std::vector>;              // types: std::vector<int>
+using Dict = $<std::string, int>::of<std::map>;    // std::map<std::string, int>
+using Hole = $<>;                                  // the bare hole
+```
+
+Verified working in one TU against the real header. It reads better than `__<int>` for two reasons.
+`$<int>` can never be misread as `_<int>` at a glance, where `__<int>` is one underscore away. And the
+*failure mode* is better: `__` defers its risk (a stdlib claims the name someday, and the collision
+lands in a stranger's TU), while `$` fails deterministically at its own line under `-pedantic`, today
+or never, and only for whoever included the header. Cost: `$` is spent, so the closed/term lift that
+was going to be `$(42)` needs another name — that cell has no hole logic at all, so it may want a word
+rather than a symbol.
+
+#### Non-ASCII identifiers (surveyed)
+
+C++23 identifiers follow UAX #31, so the palette is wider than expected. Measured on clang:
+
+| tier | characters | `-pedantic-errors` | warnings |
+| --- | --- | --- | --- |
+| letters (`XID_Start`) | `λ α β γ τ θ Ω Σ Π Δ` · `ℓ ℝ ℤ ℕ ℂ ℚ ℍ ℘ ℯ ℰ` · `ª º µ ı ˆ ᵗ ᵀ` · `型 値 空` | ok | 0 |
+| math notation | `∂ ∇ ∞` | **rejected** | 2, *"mathematical notation character"* |
+| not identifiers at all | `∘ ∑ √ → ⇒ □ ● ¢ £ € · ± × ÷ § © ® ° ¹ ² ½ ✓ ★ ‿ ⁀` | — | — |
+
+The first tier is the surprise: `τ<int>` or `ℓ<int>` is **strictly more conforming than either `__` or
+`$`** — fully standard, zero warnings, survives `-pedantic`, and collision-proof for a reason no ASCII
+name can match, since nobody declares a variable named `τ`. It has neither `__`'s deferred-collision
+risk nor `$`'s non-conformance. `τ` for "type" and `ℓ` for the lieutenant metaphor both read; `型<int>`
+is semantically exact and a large cultural ask. Math *symbols* are a trap that looks like the opposite:
+`∂`/`∇`/`∞` compile by default but are a clang extension, dying under `-pedantic` exactly like `$`.
+
+What rules the first tier out of the *default* spelling is untypeability, not legality — no compose key,
+no `τ`. Which is precisely what the opt-in-header architecture is for: the palette is a menu for the
+alias line, not for the core. Untested here: GCC and MSVC. C++23 mandates UTF-8 source (P2295) and
+UAX #31 identifiers (P1949), so a conforming C++23 compiler should accept the first tier; the gcc leg
+of CI would settle it before anything ships.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
