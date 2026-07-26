@@ -536,7 +536,7 @@ C++23 identifiers follow UAX #31, so the palette is wider than expected. Measure
 
 | tier | characters | `-pedantic-errors` | warnings |
 | --- | --- | --- | --- |
-| letters (`XID_Start`) | `λ α β γ τ θ Ω Σ Π Δ` · `ℓ ℝ ℤ ℕ ℂ ℚ ℍ ℘ ℯ ℰ` · `ª º µ ı ˆ ᵗ ᵀ` · `型 値 空` | ok | 0 |
+| letters (`XID_Start`) | `λ α τ θ Ω Σ Δ` · `ℓ ℝ ℤ ℕ ℂ ℚ ℘ ℯ` · `ª º µ ı ˆ ᵗ` · `型 値 空` | ok | 0 |
 | math notation | `∂ ∇ ∞` | **rejected** | 2, *"mathematical notation character"* |
 | not identifiers at all | `∘ ∑ √ → ⇒ □ ● ¢ £ € · ± × ÷ § © ® ° ¹ ² ½ ✓ ★ ‿ ⁀` | — | — |
 
@@ -552,6 +552,28 @@ no `τ`. Which is precisely what the opt-in-header architecture is for: the pale
 alias line, not for the core. Untested here: GCC and MSVC. C++23 mandates UTF-8 source (P2295) and
 UAX #31 identifiers (P1949), so a conforming C++23 compiler should accept the first tier; the gcc leg
 of CI would settle it before anything ships.
+
+#### `$()` and `$<>` together, via a function-like macro (works)
+
+Spending `$` on the type world seemed to cost the closed/term lift. It doesn't: a **function-like**
+macro only expands when the next token is `(`, so a macro `$(…)` and a template `$<…>` coexist in one
+TU — the name-kind wall is a *language* rule, and the preprocessor runs before it.
+
+```cpp
+template <class... A> using $ = tacit::blank<A...>;   // $<int>, $<>   — the type world
+#define $(...) tacit::lift(__VA_ARGS__)               // $(42)         — the term lift
+```
+
+Verified: `$<int>::of<std::vector>`, `$<>`, `$(x)`, `$ (x)` (space before the paren still expands, as
+function-like macros do), nested `$($(x))`, multi-argument `$(a, b)` through `__VA_ARGS__`, `$<int>{}`,
+and an unrelated `$x` identifier — all fine, and the definition order of macro vs alias is irrelevant.
+
+What it costs is what macros always cost: no ADL, no overloading, no namespace, no scope — `$(` is
+claimed for the rest of the translation unit. That argues for `<tacit/$.hpp>` being included **last**,
+which is a genuine ordering constraint (unlike the plain name collisions elsewhere in these notes,
+which are order-independent). It adds no *conformance* cost, since `$` was already an extension
+identifier and both spellings live in the same opt-in header. Whether a macro is an acceptable price
+for the fourth cell is the open question; the conforming core name for that cell is needed regardless.
 
 ### The placeholder is always `_` (decision)
 
