@@ -552,6 +552,13 @@ collision risk point in opposite directions, and collision is the one that bites
 
 #### One template, two worlds
 
+The type-level blank is `_::hole<>`, and it is the only spelling. `struct _` and `decltype(_)` were
+both discarded: the placeholder's own type is the *term*-level object, and conflating it with the
+type-level hole is what made the old spelling need a `struct` crutch. `bind`/`apply`/`TACIT_STD_HOLES`
+all take `hole<>` now. Watch for silent failure when adding a spelling — an unrecognised hole does not
+error, it quietly becomes a fixed argument (`bind<std::vector, _::hole<>>` compiled and produced
+`std::vector<hole<>>` before the slot-fillers were taught about it).
+
 Every spelling below is notation over the same core: one ordinary, conforming name — `tacit::hole<A...>`
 (or `blank`) — whose bare specialisation is also the type of the value, so `decltype(_)` *is* `hole<>`.
 Users who want a short alias write one line of their own:
@@ -636,6 +643,47 @@ Two subtleties cost real time and are easy to hit again:
 All of this dissolves under C++26 reflection: `^^int` is a *value*, so a single `template <auto...>`
 hole accepts `hole<^^int>` and `hole<3>` alike — one template, no probe, no marker parens, no macro.
 The preprocessor work here is the C++23 stand-in for that.
+
+#### Holes among arguments: why the kind wall bites here too, and what to do instead
+
+The type-level hole cannot be the *value* `_`, for the same reason the term-level one cannot be a
+template — but the failure lands one level earlier than expected, and it is worth being precise:
+
+- **Class templates cannot be overloaded at all.** Two primaries with the same name is
+  *"too many template parameters in template redeclaration"*, and a partial specialization cannot
+  introduce a parameter of a different *kind* than the primary's. So the kind of every argument
+  position is fixed once, at the primary.
+- **Mixed parameter *lists* are legal**, and `_` can be specialized on as a value:
+  `template <class T, auto... V> struct B` accepts `B<int, _>`, and
+  `template <class T, auto... R> struct B<T, _, R...>` matches it while `B<int, 42>` takes the
+  primary. The specialization machinery is entirely capable — it is never the obstacle.
+- **But positions are kind-locked.** `B<int, _, char>` and `B<_, int>` both fail, because a hole may
+  appear at *any* position and the arguments around it are types. `bind<map, int, _>` and
+  `bind<map, _, int>` need opposite layouts from one template. So the error from `bind<vector, _>` is
+  not "no specialization matched" — argument resolution fails before any specialization is consulted.
+- **Chaining does reach it**, since each step is its own template with its own kinds:
+  `builder<std::map>::a<int>::v<_>::with<char>` works, value `_` and all. Set aside because it puts a
+  marker on *every* position to buy a hole at one.
+
+**And when the arguments are all values, do not enumerate — compute.** Pinning `_` positionally by
+partial specialization works (`sub<1, _, 3>` selects the hole-at-1 pattern) but costs 2^n patterns:
+the last hole at position n needs every subset of the n slots before it, so 63 specializations only
+reaches arity 5. It also goes *ambiguous* — `sub<_, _>` matches both the hole-at-0 and hole-at-1
+patterns until the `<_, _, R...>` combination is written out too. All of that evaporates by folding
+over the pack instead:
+
+```cpp
+template <auto... A> struct pattern {
+  static constexpr std::array<bool, sizeof...(A)> hole{is_hole_v<A>...};
+  static constexpr std::size_t holes = (0 + ... + (is_hole_v<A> ? 1 : 0));
+};
+pattern<_, 1, _, 2, _, 3, _, 4, _>::holes == 5    // any arity, any combination, no macro
+```
+
+One primary, no specializations, no ambiguity, no bound — and it is the same algorithm
+`detail::slot_map` already runs over type packs for term-level blanks (`slot_at`, `slots_before`,
+`pick`), so the value-pack version shares a shape with what is there rather than inventing a second
+one. This is the foundation `$1`/`$2` should be built on.
 
 #### Spellings considered and set aside
 
