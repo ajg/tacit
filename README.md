@@ -67,11 +67,60 @@ combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `
 `*_` (deref), `++_` — as does streaming (`os << _`, so `for_each(v, std::cout << _)`) and member access
 through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
 
+**Comparisons chain.** C++ parses `0 < _ < 10` as `(0 < _) < 10` — a *bool* compared against 10, so
+the closure is silently always true. A comparison section therefore remembers its rightmost operand,
+and a comparison applied to one rewrites itself into the conjunction the notation means:
+
+```cpp
+0 < _ < 10        // x -> (0 < x) && (x < 10)      not  ((0 < x) < 10)
+1 <= _.size() < 4 // x -> (1 <= size(x)) && (size(x) < 4)
+0 <= _ <= 10 < 20 // chains to any length, any mix of == != < > <= >=
+```
+
+The middle term is evaluated once per link (so keep a projection cheap and pure) and `&&`
+short-circuits, exactly as in the spelled-out form. Only those six operators build a chain; any other
+operator ends it — `(0 < _) + 0 < 2` is still arithmetic on the bool, and `!(_ < 10)` is a plain
+negated predicate. The flip side of the rule is that a comparison *of* a comparison chains too:
+`(_ < 10) == false` reads as `(x < 10) && (10 == false)`, not `x >= 10` — spell that one `_ >= 10`.
+`_ < _` is unaffected: with two blanks it's the two-input comparator, not a link.
+
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
 bind the argument by reference, so `for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an
 ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives in
-`tacit::compose`, not in `|`. Even comma pairs: `_ , _` is `(a, b) -> {a, b}` (a `std::pair`), with the
-one-sided forms `_ , y` / `x , _` binding the fixed side.
+`tacit::compose`, not in `|`.
+
+**Comma builds tuples.** `,` is the one section that makes data rather than calling something, and
+the only n-ary one — each further `,` appends an operand rather than pairing with what came before:
+
+```cpp
+(_, _)                 // (a, b)    -> std::pair{a, b}
+(_, 9)                 // x         -> {x, 9}      one-sided binds
+(_, _, _)              // (a, b, c) -> std::tuple{a, b, c}
+(_.size(), _.front())  // (a, b)    -> {size(a), front(b)}
+(_, 5, _)              // (a, b)    -> {a, 5, b}   bound: no fill
+```
+
+Two operands stay a `std::pair` — `.first` / `.second` are strictly extra, since a pair is a
+two-tuple for `get`, `tuple_size`, structured bindings, and `std::apply` alike. Three or more have no
+pair to be, so they're a `std::tuple`. The operand list is **flat**: `(_, (_, _))` and
+`((_, _), _)` are the same three-slot tuple, and there's no nested-pair spelling — reach for a
+lambda if you want one. The parens around a comma section are load-bearing everywhere `,` would
+otherwise read as a separator (argument lists, init-lists, declarations) — that's the built-in comma
+doing its usual job, untouched.
+
+The usual blank rule applies, and it's the thing to watch: each `_` is a **distinct** blank, so
+`(_.size(), _.front())` takes *two* arguments — it is not a one-argument key function. For the
+same-input tuple (the lexicographic projection you probably want) that's `tacit::fanout`:
+
+```cpp
+tacit::fanout(_.size(), _.front())  // x      -> {size(x), front(x)}
+(_.size(), _.front())               // (a, b) -> {size(a), front(b)}
+```
+
+And a comma section is a **terminal builder**: it makes data, so it doesn't carry the vocabulary
+onward — `(_, _).size()` doesn't compile, exactly as `(_ < _).size()` doesn't, since neither
+multi-blank form is a projection. `fanout` returns an `fn` and so keeps composing; a one-slot comma
+section can be fed onward with `tacit::compose((_, 9), f)`.
 
 ### Composition
 

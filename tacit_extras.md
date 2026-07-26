@@ -111,7 +111,22 @@ Beyond comparison/arithmetic, the sections now cover bitwise `& |`, shift/stream
 `&& ||`, comma `,`; the unary operators `* - + ! ~ &` and `++ --` (pre/post); assignment `=` and
 compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
 
-- **`&&` / `||` are two-input combiners in the two-blank form** (`_ && _` == `(a,b) -> a && b`), like
+- **Comparisons chain (`0 < _ < 10`).** C++ parses that as `(0 < _) < 10`, comparing the bool against
+  10 — a closure that is silently always true, the one place where the section surface produced a
+  quiet wrong answer rather than a compile error. Fixed by giving the six comparison sections one
+  extra piece of state: `fn`'s second template parameter, `last`, a projection recovering the
+  *rightmost operand* of the comparison as a function of the eventual fill (`always{y}` for a bound
+  value, `same{}` for the blank, the `fn` itself for a projection; `nochain` — the default — for
+  everything else). A comparison whose left operand already carries chain state then folds into
+  `(… op0 m) && (m op y)` with `m == last(x)`, which iterates to any length and any mix of
+  `== != < > <= >=`. Three consequences worth stating: the middle term is evaluated once per link
+  (keep projections pure and cheap), `&&` short-circuits as in the spelled-out form, and comparing a
+  comparison chains too — `(_ < 10) == false` is `(x < 10) && (10 == false)`, not `x >= 10`. That last
+  one is the price of the rewrite being purely lexical (Python's chained comparisons pay it too);
+  `_ >= 10` is the spelling that means it. Non-comparison operators drop the state, so the chain ends
+  wherever the expression stops being a comparison, and `_ < _` — two blanks — stays the two-input
+  comparator rather than a link.
+- **`&&` / `||` are two-input combiners in the two-blank form** (`_ && _` == `(a, b) -> a && b`), like
   `_.size() < _.size()`. Short-circuit is preserved (it lives in the generated body) but there is no
   one-input "both predicates on x" — that's the distinct-blank stance; reach for a lambda.
 - **Streaming binds the left operand by reference.** `os << _` can't copy the stream, so the `X op _`
@@ -134,13 +149,28 @@ compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
   through `_`, the pipe-shaped `|` had little left to do, so it went back to meaning bitwise-or. Nothing
   is lost — member chaining still composes vocabulary, `tacit::compose` composes arbitrary closures —
   and the ranges pipe is untouched (`nums | views::filter(_!=0)` has a range on the left, not an `fn`).
-- **Comma pairs (not the built-in comma).** `_ , _` is `(a, b) -> std::pair{a, b}`, and `_ , y` / `x , _`
+- **Comma pairs (not the built-in comma).** `_, _` is `(a, b) -> std::pair{a, b}`, and `_, y` / `x, _`
   bind the fixed side — comma reads as the tuple/pairing glyph rather than "evaluate-and-discard". It's a
   custom overload (not `TACIT_SECTION`, whose `x op y` body would be the built-in comma = return `y`),
   guarded to `tacit::_` operands, so it only fires in a comma-*operator* context; argument-list and
   init-list commas are separators and untouched. Overloading `operator,` is normally a footgun, so this
   was added only after confirming the full suite (folds over tuples, `std::apply`, etc.) still passes.
-  Binary only for now — `_ , _ , _` needs an `fn ,` accumulator to flatten, deferred.
+- **Comma is n-ary now, and reaches projections (implemented).** The binary-only version had two
+  holes, both silent. `fn` carried no `operator,` at all, so `(_.size(), _.front())` fell to the
+  *built-in* comma: the left operand evaluated and vanished, leaving just the right — caught only by
+  `[[nodiscard]]`, and only as a warning. And `_, _, _` parses `((_, _), _)`, where the two-blank
+  form returned a plain lambda that no further `,` could grow, so it built a closure of the wrong
+  shape that failed at the call. Both are fixed by making a comma expression its own type,
+  `comma_section<Ops...>` — an operand list where each operand is a blank, a projection, or a bound
+  value, exactly the vocabulary `section` already uses for member calls (the slot bookkeeping is now
+  factored into `slot_map`, shared by both). Each further `,` appends an operand; applying it fills
+  one blank per argument, left to right. Consequences worth stating: two operands stay a `std::pair`
+  (a pair *is* a two-tuple for `get`/`tuple_size`/structured bindings/`apply` — `.first`/`.second` are
+  strictly extra) and three or more become a `std::tuple`; the list is flat, so `(_, (_, _))` and
+  `((_, _), _)` are the same three-slot tuple and nesting has no spelling; and a comma section is a
+  terminal builder rather than an `fn`, so it doesn't carry the vocabulary onward — it makes data.
+  Widening `operator,` from `_` to `fn` widens the footgun surface too, which is why
+  `for_each_element`'s fold now spells its discard `void(f(x))` rather than leaning on `,`.
 - **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
 
 ## Range-adaptor verbs (implemented, opt-in `TACIT_VIEWS`)

@@ -8,6 +8,7 @@
 #include <ranges>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using tacit::_;
@@ -37,13 +38,13 @@ int main() {
   // ---- bitwise & | / shift (| is an ordinary section now, symmetric with &) ----
   assert((_ & 0b0110)(0b1100) == 0b0100);
   assert((_ | 0b0110)(0b1000) == 0b1110);      // x -> x | 0b0110
-  assert((_ | _)(0b1000, 0b0011) == 0b1011);   // (a,b) -> a | b  (two-input)
+  assert((_ | _)(0b1000, 0b0011) == 0b1011);   // (a, b) -> a | b  (two-input)
   assert((_ << 2)(3) == 12);
   assert((_ >> 1)(8) == 4);
 
   // ---- logical: two-blank is a two-INPUT combiner (like the comparators); the value form is unary ----
   {
-    assert((_ && _)(true, true) == true);    // (a,b) -> a && b
+    assert((_ && _)(true, true) == true);    // (a, b) -> a && b
     assert((_ && _)(true, false) == false);
     assert((_ || _)(false, false) == false);
     assert((_ && true)(true) == true);       // x -> x && true  (unary section)
@@ -73,12 +74,42 @@ int main() {
     assert(m == 5);
   }
 
-  // ---- comma: the pairing section, `_ , _` == (a,b) -> {a,b} ----
+  // ---- comma: the tupling section, `_, _` == (a, b) -> {a, b} ----
   {
     auto pr = (_, _)(3, 4);
     assert(pr.first == 3 && pr.second == 4);
     assert((_, 9)(5).second == 9);  // _, value  -> x -> {x, 9}
     assert((7, _)(5).first == 7);   // value, _  -> x -> {7, x}
+
+    // projections are operands like any other — without the fn overload the built-in comma would
+    // evaluate and discard the left one, silently yielding just the right
+    auto sp = (_.size(), _.front())(std::string("abc"), std::string("xyz"));
+    assert(sp.first == 3 && sp.second == 'x');
+    assert((_.size(), 9)(std::string("abcd")).first == 4);
+    assert((9, _.size())(std::string("abcd")).second == 4);
+    assert((_.size(), _)(std::string("ab"), 7).second == 7);  // projected + plain blank
+
+    // three or more operands accumulate into a tuple (no pair to be), one fill per blank
+    auto t3 = (_, _, _)(1, 2, 3);
+    static_assert(std::tuple_size_v<decltype(t3)> == 3);
+    assert(std::get<0>(t3) == 1 && std::get<2>(t3) == 3);
+    auto tm = (_, 5, _)(1, 3);  // a bound value mid-list takes no fill
+    assert(std::get<0>(tm) == 1 && std::get<1>(tm) == 5 && std::get<2>(tm) == 3);
+    auto tp = (_.size(), _, _.front())(std::string("ab"), 9, std::string("zy"));
+    assert(std::get<0>(tp) == 2 && std::get<1>(tp) == 9 && std::get<2>(tp) == 'z');
+
+    // the list is flat: parenthesising doesn't nest, it concatenates
+    static_assert(std::tuple_size_v<decltype((_, (_, _))(1, 2, 3))> == 3);
+    auto cc = ((_, _), (_, _))(1, 2, 3, 4);
+    static_assert(std::tuple_size_v<decltype(cc)> == 4);
+    assert(std::get<3>(cc) == 4);
+
+    // ordinary tuple-likes: structured bindings, apply, constexpr
+    auto [a, b, c] = (_, _, _)(1, 2, 3);
+    assert(a + b + c == 6);
+    assert(std::apply([](int x, int y, int z) { return x + y + z; }, (_, _, _)(1, 2, 3)) == 6);
+    constexpr auto k = (_, _, _)(1, 2, 3);
+    static_assert(std::get<1>(k) == 2);
   }
 
   // ---- operator-> : member of the pointee via the real arrow ----
