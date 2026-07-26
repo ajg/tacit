@@ -142,9 +142,17 @@ constexpr bool is_blank_v = [] {
 // `fn`'s second parameter is its CHAIN STATE — see "comparison chains" below. Everything that is not
 // a comparison section builds `fn{f}`, i.e. `Last == nochain`: an ordinary, unchained projection.
 struct nochain {};
+// A closure of more than one fill (`_ < _`, `_.size() < _`, `_ , _`'s operator siblings). It rides
+// in the same slot as the chain state because the two never coexist: a two-input form has no
+// rightmost-operand to fold against. The point is `is_slot_v` below — a two-input closure in
+// argument position is a bound VALUE (`_.sort(_ < _)` passes a comparator), not a projected blank,
+// which only a one-fill closure can be.
+struct nary {};
 template <class> constexpr bool is_fn_v = false;
 template <class, class = nochain> struct fn;
 template <class F, class L> constexpr bool is_fn_v<fn<F, L>> = true;
+template <class> constexpr bool is_nary_v = false;
+template <class F> constexpr bool is_nary_v<fn<F, nary>> = true;
 template <class T>
 concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
 
@@ -185,7 +193,9 @@ template <class Y> [[nodiscard]] constexpr auto last_of(Y const &y) {
 
 // A "slot" the section fills from a supplied argument: a plain blank (`_`, identity) or an `fn` —
 // a *projected* blank, whose projection is applied to the fill before the call.
-template <class T> constexpr bool is_slot_v = is_blank_v<T> || is_fn_v<std::remove_cvref_t<T>>;
+template <class T>
+constexpr bool is_slot_v = is_blank_v<T> || (is_fn_v<std::remove_cvref_t<T>> &&
+                                             !is_nary_v<std::remove_cvref_t<T>>);
 
 // Where the blanks are in an operand list, and how a supplied fill reaches each one. Shared by the
 // two things built out of operand lists: `section` (a partially-applied member call) and
@@ -310,6 +320,7 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //  that `_`'s operator-> hands back. No projected-blank path — a plain call forwarder.
 #define TACIT_ARROW_MEMBER(NAME)                                                                   \
   template <class... A>                                                                            \
+    requires(!(tacit::detail::is_blank_v<A> || ...))                                               \
   [[nodiscard]] static constexpr auto NAME(A&&... a) {                                             \
     return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)         \
              requires requires(X&& xx, A&&... aa) {                                                 \
@@ -360,10 +371,10 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }
 #define TACIT_CPO2(NAME, CPO)                                                                      \
   [[nodiscard]] static constexpr auto NAME() {                                                     \
-    return []<class X, class Y>(X&& x, Y&& y) -> decltype(auto)                                    \
+    return tacit::detail::fn{[]<class X, class Y>(X&& x, Y&& y) -> decltype(auto)                  \
              requires requires(X&& xx, Y&& yy) { CPO(xx, yy); } {                                  \
       return CPO(std::forward<X>(x), std::forward<Y>(y));                                          \
-    };                                                                                             \
+    }, tacit::detail::nary{}};                                                                     \
   }
 
 //  One operator section (both one-sided forms and the two-blank form). Uses the enclosing `self`.
@@ -381,8 +392,9 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
                { return x op std::forward<decltype(y)>(y); }};                                      \
   }                                                                                                \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                    \
-    return [](auto&& x, auto&& y) -> decltype(auto)                                                \
-             { return std::forward<decltype(x)>(x) op std::forward<decltype(y)>(y); };             \
+    return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                              \
+             { return std::forward<decltype(x)>(x) op std::forward<decltype(y)>(y); },             \
+             tacit::detail::nary{}};                                                               \
   }
 
 //  One comparison section: TACIT_SECTION plus chain state, so a following comparison can rewrite
@@ -404,8 +416,9 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
                { return x op std::forward<decltype(y)>(y); }, tacit::detail::same{}};               \
   }                                                                                                \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                    \
-    return [](auto&& x, auto&& y) -> decltype(auto)                                                \
-             { return std::forward<decltype(x)>(x) op std::forward<decltype(y)>(y); };             \
+    return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                              \
+             { return std::forward<decltype(x)>(x) op std::forward<decltype(y)>(y); },             \
+             tacit::detail::nary{}};                                                               \
   }
 
 //  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
@@ -427,8 +440,13 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //  the caller's lvalue: e.g. std::ranges::for_each(v, _ += 1).
 #define TACIT_ASSIGN(op)                                                                            \
   template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator op(self, Y&& y) { \
-    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                   \
-             { return std::forward<decltype(x)>(x) op y; }};                                         \
+    if constexpr (tacit::detail::is_blank_v<Y>) /* `_ op= _` is two-input, like `_ op _` */          \
+      return tacit::detail::fn{[](auto&& a, auto&& b) -> decltype(auto)                              \
+               { return std::forward<decltype(a)>(a) op std::forward<decltype(b)>(b); },             \
+               tacit::detail::nary{}};                                                               \
+    else                                                                                             \
+      return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                  \
+               { return std::forward<decltype(x)>(x) op y; }};                                        \
   }
 
 //  Reflective members (defined empty when reflection is off, so TACIT_CORE need not branch).
@@ -521,9 +539,16 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }                                                                                                \
   template <class... Y>                                                                            \
   [[nodiscard]] static constexpr auto operator()(Y&&... ys) {                                      \
-    return [... ys = std::forward<Y>(ys)](auto&& x, auto&&... zs) -> decltype(auto) {              \
-      return std::invoke(std::forward<decltype(x)>(x), ys..., std::forward<decltype(zs)>(zs)...);  \
-    };                                                                                             \
+    if constexpr ((tacit::detail::is_slot_v<Y> || ...)) /* `_(_)` == (f, x) -> f(x) */             \
+      return tacit::detail::make_section(                                                          \
+          [](auto&& f, auto&&... as) -> decltype(auto)                                             \
+            { return std::invoke(std::forward<decltype(f)>(f),                                     \
+                                 std::forward<decltype(as)>(as)...); },                            \
+          std::forward<Y>(ys)...);                                                                 \
+    else                                                                                           \
+      return [... ys = std::forward<Y>(ys)](auto&& x, auto&&... zs) -> decltype(auto) {            \
+        return std::invoke(std::forward<decltype(x)>(x), ys..., std::forward<decltype(zs)>(zs)...);\
+      };                                                                                           \
   }                                                                                                \
   template <class... Ts>                                                                           \
   [[nodiscard]] static constexpr auto get_types() {                                                \
@@ -539,8 +564,14 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
   }                                                                                                \
   template <class I>                                                                               \
   [[nodiscard]] constexpr auto operator[](I&& i) const {                                           \
-    return tacit::detail::fn{[i = std::forward<I>(i)](auto&& x) -> decltype(auto)                  \
-             { return std::forward<decltype(x)>(x)[i]; }};                                         \
+    if constexpr (tacit::detail::is_slot_v<I>) /* `_[_]` == (x, i) -> x[i] */                      \
+      return tacit::detail::make_section(                                                          \
+          [](auto&& x, auto&& j) -> decltype(auto)                                                 \
+            { return std::forward<decltype(x)>(x)[std::forward<decltype(j)>(j)]; },                \
+          std::forward<I>(i));                                                                     \
+    else                                                                                           \
+      return tacit::detail::fn{[i = std::forward<I>(i)](auto&& x) -> decltype(auto)                \
+               { return std::forward<decltype(x)>(x)[i]; }};                                       \
   }                                                                                                \
   TACIT_REFLECT(Self)                                                                              \
   static_assert(true)
@@ -550,23 +581,43 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 #define TACIT_STD_MEMBERS(X)                                                                       \
   /* access   */ X(at); X(front); X(back); X(top);                                                 \
   /* capacity */ X(length); X(capacity); X(reserve); X(resize); X(shrink_to_fit); X(max_size);     \
+                 X(size_bytes);                                                                    \
   /* modify   */ X(clear); X(push_back); X(pop_back); X(push_front); X(pop_front); X(push); X(pop);\
                  X(emplace); X(emplace_back); X(emplace_front); X(emplace_hint); X(insert);        \
-                 X(insert_or_assign); X(erase); X(extract); X(remove); X(remove_if); X(splice); X(merge);\
-                 X(unique); X(sort); X(append); X(assign); X(replace);                             \
+                 X(insert_or_assign); X(try_emplace); X(erase); X(extract); X(remove); X(remove_if);\
+                 X(splice); X(merge); X(unique); X(sort); X(append); X(assign); X(replace);        \
+                 X(before_begin); X(insert_after); X(emplace_after); X(erase_after);               \
+  /* range23  */ X(assign_range); X(append_range); X(insert_range); X(prepend_range); X(push_range);\
   /* lookup   */ X(find); X(count); X(contains); X(lower_bound); X(upper_bound); X(equal_range);   \
   /* string   */ X(substr); X(compare); X(starts_with); X(ends_with); X(rfind); X(find_first_of);  \
                  X(find_last_of); X(find_first_not_of); X(find_last_not_of); X(c_str); X(str);     \
+                 X(remove_prefix); X(remove_suffix); X(to_string);                                 \
   /* optional */ X(has_value); X(value); X(value_or); X(and_then); X(transform); X(or_else); X(error);\
-                 X(index); X(reset);                                                               \
-  /* pointer  */ X(get); X(release); X(use_count); X(expired); X(lock); X(owner_before);
+                 X(error_or); X(transform_error); X(index); X(reset);                              \
+  /* pointer  */ X(get); X(release); X(use_count); X(expired); X(lock); X(owner_before);           \
+  /* error    */ X(what); X(code); X(message); X(category); X(name);                               \
+  /* path     */ X(filename); X(stem); X(extension); X(parent_path); X(relative_path); X(root_path);\
+                 X(has_filename); X(has_extension); X(is_absolute); X(is_relative);                \
+                 X(replace_extension); X(replace_filename); X(remove_filename);                    \
+                 X(lexically_normal); X(string); X(generic_string); X(native);                     \
+  /* stream   */ X(flush); X(is_open); X(open); X(close); X(good); X(eof); X(fail); X(bad); X(rdbuf);\
+  /* thread   */ X(join); X(detach); X(joinable); X(wait); X(valid); X(share); X(load); X(store);  \
+                 X(exchange); X(fetch_add); X(fetch_sub); X(unlock); X(try_lock); X(notify_one);   \
+                 X(notify_all); X(request_stop); X(stop_requested);                                \
+  /* numeric  */ X(real); X(imag); X(time_since_epoch);                                            \
+  /* bitset   */ X(test); X(set); X(flip); X(all); X(any); X(none);                                \
+  /* view     */ X(base); X(subspan);                                                              \
+  /* regex    */ X(position); X(prefix); X(suffix); X(ready);                                      \
+  /* source   */ X(file_name); X(function_name); X(line); X(column);
 
 #define TACIT_STD_CPOS1(X)                                                                         \
   X(begin,  std::ranges::begin)  X(end,   std::ranges::end)                                        \
   X(cbegin, std::ranges::cbegin) X(cend,  std::ranges::cend)                                       \
   X(rbegin, std::ranges::rbegin) X(rend,  std::ranges::rend)                                       \
+  X(crbegin, std::ranges::crbegin) X(crend, std::ranges::crend)                                    \
   X(size,   std::ranges::size)   X(ssize, std::ranges::ssize)                                      \
-  X(empty,  std::ranges::empty)  X(data,  std::ranges::data)
+  X(empty,  std::ranges::empty)  X(data,  std::ranges::data)                                       \
+  X(cdata,  std::ranges::cdata)
 // clang-format on
 
 // Additive extension hook for the one `_`: pre-#define a comma list of bare member-call names before
@@ -599,15 +650,24 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 //  The standard nested-type vocabulary (one editable table, grouped by role). Every name here is a
 //  nested type some standard component exposes; a projection instantiates only on use, so listing a
 //  name a given X lacks costs nothing until `_::name::of<X>` is actually asked for.
-#define TACIT_STD_TYPE_MEMBERS(X)                                                                   \
+#define TACIT_STD_TYPE_MEMBERS(X)                                                                  \
   /* element */ X(value_type); X(element_type); X(reference); X(const_reference);                  \
-                X(pointer); X(const_pointer);                                                       \
+                X(pointer); X(const_pointer);                                                      \
   /* size    */ X(size_type); X(difference_type);                                                  \
   /* iterate */ X(iterator); X(const_iterator); X(reverse_iterator); X(const_reverse_iterator);    \
+                X(iterator_category); X(iterator_concept);                                         \
+                X(local_iterator); X(const_local_iterator);                                        \
   /* assoc   */ X(key_type); X(mapped_type); X(key_compare); X(value_compare);                     \
-  /* alloc   */ X(allocator_type);                                                                 \
+                X(hasher); X(key_equal); X(node_type); X(insert_return_type);                      \
+  /* alloc   */ X(allocator_type); X(void_pointer); X(const_void_pointer);                         \
   /* pair    */ X(first_type); X(second_type);                                                     \
   /* traits  */ X(char_type); X(traits_type); X(int_type);                                         \
+                X(pos_type); X(off_type); X(state_type); X(string_type);                           \
+  /* monad   */ X(error_type); X(unexpected_type); X(result_type);                                 \
+  /* pointer */ X(deleter_type); X(weak_type);                                                     \
+  /* time    */ X(rep); X(period); X(duration); X(time_point); X(clock);                           \
+  /* adaptor */ X(container_type);                                                                 \
+  /* thread  */ X(native_handle_type); X(id);                                                      \
   /* meta    */ X(type);
 // clang-format on
 
@@ -635,7 +695,7 @@ template <class F, class Last> struct fn {
   // Chain state: `nochain` for every projection that is not a comparison section. See "comparison
   // chains" above — `last` recovers the rightmost operand of the comparison this `fn` represents.
   [[no_unique_address]] Last last{}; // (the initializer keeps plain `fn{f}` warning-clean)
-  static constexpr bool chained = !std::is_same_v<Last, nochain>;
+  static constexpr bool chained = !std::is_same_v<Last, nochain> && !std::is_same_v<Last, nary>;
 
   template <class... A>
     requires requires(F const &g, A &&...a) { g(std::forward<A>(a)...); }
@@ -649,11 +709,18 @@ template <class F, class Last> struct fn {
   // (`import tacit;`): `g op value` / `value op g` compose to a unary fn; `g op h` is binary.
 #define TACIT_FN_OP(op)                                                                            \
   template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
-    return tacit::detail::fn{                                                                      \
+    if constexpr (is_blank_v<Y>) /* `g op _` is two-input, like `_ op _` — not a bound value */    \
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                         \
+        return g(std::forward<decltype(a)>(a)) op std::forward<decltype(b)>(b); }, nary{}};        \
+    else                                                                                           \
+      return tacit::detail::fn{                                                                    \
         [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; }};\
   }                                                                                                \
   template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {               \
-    if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                            \
+    if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                   \
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                         \
+        return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};        \
+    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                       \
       return tacit::detail::fn{                                                                    \
           [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                             \
             return x op g(std::forward<decltype(y)>(y)...); }};                                    \
@@ -662,9 +729,9 @@ template <class F, class Last> struct fn {
           [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }};\
   }                                                                                                \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {  \
-    return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
+    return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                        \
       return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
-    };                                                                                             \
+    }, nary{}};                                                                                    \
   }
   TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
   TACIT_FN_OP(&) TACIT_FN_OP(|) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
@@ -675,33 +742,36 @@ template <class F, class Last> struct fn {
   // rightmost operand, so chains of any length and any mix of the six operators compose.
 #define TACIT_FN_COMPARE(op)                                                                       \
   template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                 \
-    if constexpr (is_blank_v<Y>) /* `g op _`: a blank right operand is not a chain link */         \
-      return tacit::detail::fn{                                                                    \
-          [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; }};    \
+    if constexpr (is_blank_v<Y>) /* `g op _` is the two-input comparator, like `_ op _` */        \
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                         \
+        return g(std::forward<decltype(a)>(a)) op std::forward<decltype(b)>(b); }, nary{}};        \
     else if constexpr (fn::chained) /* `(… op0 m) op y` == `(… op0 m) && (m op y)` */              \
-      return tacit::detail::fn{[g, y](auto &&x) -> bool {                                          \
-                                 return static_cast<bool>(g(x)) &&                                 \
-                                        static_cast<bool>(g.last(x) op y);                         \
+      return tacit::detail::fn{[g, y](auto &&...x) -> bool {                                       \
+                                 return static_cast<bool>(g(x...)) &&                              \
+                                        static_cast<bool>(g.last(x...) op y);                      \
                                },                                                                  \
                                tacit::detail::always{y}};                                          \
     else /* first link: unchanged behaviour, plus the state a following comparison folds against */ \
       return tacit::detail::fn{                                                                    \
-          [g, y](auto &&x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)) op y; },     \
+          [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; },\
           tacit::detail::always{y}};                                                               \
   }                                                                                                \
   template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {               \
-    if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                            \
+    if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                   \
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                         \
+        return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};        \
+    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                       \
       return tacit::detail::fn{                                                                    \
-          [g, x = std::forward<X>(x)](auto &&y) -> decltype(auto) {                                \
-            return x op g(std::forward<decltype(y)>(y)); }, g}; /* rightmost operand: g itself */  \
+          [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                             \
+            return x op g(std::forward<decltype(y)>(y)...); }, g}; /* rightmost operand: g */      \
     else /* non-copyable (stream): bind by reference */                                            \
       return tacit::detail::fn{                                                                    \
-          [g, &x](auto &&y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)); }, g};\
+          [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }, g};\
   }                                                                                                \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {  \
-    return [g, h](auto &&a, auto &&b) -> decltype(auto) {                                          \
+    return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                        \
       return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                   \
-    };                                                                                             \
+    }, nary{}};                                                                                    \
   }
   TACIT_FN_COMPARE(==) TACIT_FN_COMPARE(!=) TACIT_FN_COMPARE(<)
   TACIT_FN_COMPARE(>)  TACIT_FN_COMPARE(<=) TACIT_FN_COMPARE(>=)
@@ -742,7 +812,9 @@ template <class F, class Last> struct fn {
   // (`|` is a bitwise section like `&`, above — general composition is `tacit::compose`, not `f | g`.)
   // Vocabulary — each name composes through the projection (member chaining). No-blank args only.
 #define TACIT_FN_MEMBER(NAME)                                                                      \
-  template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
+  template <class... A>                                                                            \
+    requires(!(tacit::detail::is_blank_v<A> || ...)) /* see "no dead closures" below */            \
+  [[nodiscard]] constexpr auto NAME(A &&...a) const {                                              \
     return tacit::detail::fn{                                                                      \
         [g = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)            \
           requires requires(X &&...xx, A &&...aa) {                                                \
@@ -755,6 +827,20 @@ template <class F, class Last> struct fn {
     return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)                   \
              requires requires(X &&...xx) { CPO(std::declval<fn const &>()(std::forward<X>(xx)...)); }\
              { return CPO(g(std::forward<X>(x)...)); }};                                           \
+  }
+  // `._()` — the application form, composed. On `_` itself, application is spelled `_(a, b)`
+  // (`operator()` builds `f -> f(a, b)`); on a projection that spelling is taken, since calling an
+  // `fn` means "call this closure". So the vocabulary carries it under the placeholder's own name:
+  // `_.x()._()` invokes what `_.x()` produced, and `._(a, b)` calls it with those arguments —
+  // `x -> invoke(x.x(), a, b)`. Returns an `fn`, so a callable-returning chain keeps going.
+  template <class... Y>
+    requires(!(tacit::detail::is_blank_v<Y> || ...))
+  [[nodiscard]] constexpr auto _(Y &&...ys) const {
+    return tacit::detail::fn{
+        [g = *this, ... ys = std::forward<Y>(ys)]<class... X>(X &&...x) -> decltype(auto)
+          requires requires(X &&...xx, Y &&...yy) {
+            std::invoke(std::declval<fn const &>()(std::forward<X>(xx)...), std::forward<Y>(yy)...);
+          } { return std::invoke(g(std::forward<X>(x)...), ys...); }};
   }
   TACIT_STD_MEMBERS(TACIT_FN_MEMBER)
   TACIT_FOR_EACH(TACIT_FN_MEMBER, TACIT_VERBS)
@@ -814,7 +900,9 @@ template <class... Ops> struct comma_section {
   // a blank inside a chained call (`(_, _).foo(_)`) is not a further slot, exactly as it isn't for a
   // projection (`_.front().substr(_)` has never taken one) — the fills belong to the operand list.
 #define TACIT_COMMA_MEMBER(NAME)                                                                   \
-  template <class... A> [[nodiscard]] constexpr auto NAME(A &&...a) const {                        \
+  template <class... A>                                                                            \
+    requires(!(tacit::detail::is_blank_v<A> || ...))                                               \
+  [[nodiscard]] constexpr auto NAME(A &&...a) const {                                              \
     return tacit::detail::fn{                                                                      \
         [c = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)            \
           requires requires(X &&...xx, A &&...aa) {                                                \

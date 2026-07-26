@@ -52,12 +52,33 @@ lambda the moment you need to reorder or reuse an argument.
 A blank can also *project*: an `fn` in argument position applies its projection to the fill, so
 `_.push_back(_.size())` is `(c, x) -> c.push_back(size(x))`.
 
+A blank always means "another fill", including where that reading is less obvious — `_[_]` is
+`(x, i) -> x[i]`, `_ += _` is `(a, b) -> a += b`, `_(_)` is `(f, x) -> f(x)`, and `_.size() < _` is
+`(v, n) -> size(v) < n`. Where a blank *cannot* be filled, the expression is rejected where you write
+it rather than building a closure nothing can call: a chained call binds its arguments, so
+`_.front().substr(_)` is a compile error, not a dead closure. (`_.substr(_)` is fine — that section
+does fill its own blanks.)
+
 ### Vocabulary
 
 `_` carries a curated first-class vocabulary of standard-library member names (`at`, `push_back`,
 `substr`, `value_or`, `find`, `emplace`, …), kept in one editable table. Range access
 (`size`, `begin`, `end`, `empty`, `data`, …) routes through the `std::ranges` customization points, so
 `_.size()` / `_.begin()` also work on C arrays, string views, and third-party ranges.
+
+The table reaches past containers, since the names that pay off in point-free code are the ones you
+project or test with: diagnostics (`what`, `code`, `message`), `filesystem::path` (`extension`,
+`stem`, `filename`, `parent_path`, `is_absolute`, …), the monadic family (`and_then`, `transform`,
+`or_else`, `value_or`, `error_or`, `transform_error`), concurrency (`join`, `joinable`, `load`,
+`store`, `fetch_add`, `wait`, `valid`), streams (`good`, `eof`, `is_open`, `flush`), `bitset`
+(`test`, `all`, `any`, `none`, `flip`), `regex` match results (`position`, `prefix`, `suffix`,
+`ready`), `complex` (`real`, `imag`), `chrono` (`count`, `time_since_epoch`), and `span`
+(`subspan`, `size_bytes`). Names cost nothing until used — each is a member template, so a wider
+table is a longer declaration list, not a bigger binary.
+
+The type-level table is the twin, and reaches the same way: `_::rep::of<duration>`,
+`_::hasher::of<unordered_map<…>>`, `_::deleter_type::of<unique_ptr<…>>`,
+`_::container_type::of<stack<…>>`, `_::iterator_category::of<It>`.
 
 ### Operator sections
 
@@ -147,8 +168,12 @@ auto scaled = (_ + 1) * 2;         // x -> (x + 1) * 2
 auto head   = _[0];                // x -> x[0]
 ```
 
-Every single-argument closure `_` produces is a small composable `fn`; the multi-blank forms
-(`_.foo(_)`, `_ < _`) stay partial applications, where composition would not mean anything.
+Composition is **arity-preserving**, so a two-input form composes exactly like a one-input one:
+`(_ + _) + 1` is `(a, b) -> (a + b) + 1`, and `(_ < _).size()` is `(a, b) -> size(a < b)`. The one
+place arity is load-bearing is argument position, where a *one-fill* closure is a projected blank
+(`_.push_back(_.size())`) while a *many-fill* one is an ordinary bound value — which is what lets
+`_.sort(_ < _)` pass a comparator. The genuinely partial forms (`_.foo(_)`, which is still filling
+its own blanks) stay partial applications.
 
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
 `x -> size(front(x))` — handy as a projection: `sort(words, {}, _.front().size())`.

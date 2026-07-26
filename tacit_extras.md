@@ -186,6 +186,50 @@ compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
   TACIT_VERBS.
 - **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
 
+## Vocabulary sweep + arity (implemented)
+
+A pass over the standard library for names worth first-class treatment, and the arity rules that fell
+out of it.
+
+- **Tables roughly doubled** — verbs 66 → 149, nouns 23 → 50, range CPOs 10 → 13 (`crbegin`, `crend`,
+  `cdata` complete that family). The curation test was *projection value*: names you sort, filter or
+  test with. That is why the additions cluster where they do — diagnostics (`what`, `code`, `message`,
+  `category`, `name`), `filesystem::path` (17 names; `sort(paths, {}, _.extension())` is the whole
+  argument), the monadic family completed (`error_or`, `transform_error`), concurrency (`join`,
+  `joinable`, `load`, `store`, `fetch_add`, `wait`, `valid` — `for_each(threads, _.join())` is the
+  shape), streams, `bitset`, `regex` match results, `complex`, `chrono`, `span`, `try_emplace`, the
+  `forward_list` `*_after` family, and the C++23 `*_range` members.
+- **The cost is compile-time only, and small.** A name is a member template on four surfaces (`_`,
+  `fn`, `arrow`, `comma_section`), so a wider table is a longer declaration list — instantiated only
+  on use. Measured: the tiny-TU binary is byte-identical at 16840 either way, front-end time +20% on
+  a trivial TU (0.18s → 0.22s) and +11% on the heaviest test (0.34s → 0.38s).
+- **Rejected, with reasons.** `swap` — the free/`ranges` form is already `TACIT_CPO2`, and the member
+  form is a libc++ landmine (`x.swap(pair)` fails to instantiate there, pre-existing and independent
+  of tacit). `reverse` — would collide with `TACIT_VIEW(reverse)` under `TACIT_VIEWS`. `first`/`last`
+  (span) — they read as `pair::first`/`second`, which are *data* members a call vocabulary can never
+  reach, so the name would promise something it can't do. `any::type` — would shadow the `type` noun.
+  The bucket/`load_factor`/`rehash` and allocator `allocate`/`deallocate` families — real, but nobody
+  goes point-free there.
+- **Composition became arity-preserving, and arity became load-bearing in exactly one place.** Every
+  two-input form (`_ op _`, `g op _`, `g op h`, the binary CPO) used to return a raw lambda, which
+  carried nothing: `(_ < _).size()` and `(_ + _) + 1` did not compile. They now return an `fn`, so
+  they compose like anything else. That created one conflict worth naming: an `fn` in argument
+  position is a *projected blank*, so making `_ < _` an `fn` would have turned `_.sort(_ < _)` from
+  "pass a comparator" into "project the fill", breaking it. Hence the `nary` tag — it rides in the
+  chain-state slot (the two never coexist, since a two-input form has no rightmost operand to fold
+  against) and `is_slot_v` excludes it. One-fill closures project; many-fill closures are values.
+- **No dead closures.** A blank captured where nothing can fill it now fails where it is written
+  rather than building a closure that no call can satisfy: `_.front().substr(_)`, `_->substr(_)`,
+  `_.front()._(_)` are rejected, because a chained call binds its arguments. The cases that *do* have
+  a sensible reading got one instead of an error — `_[_]` is `(x, i) -> x[i]`, `_ += _` is
+  `(a, b) -> a += b`, `_(_)` is `(f, x) -> f(x)`, all routed through the existing `section`, and
+  `_.size() < _` is the two-input comparator it always looked like (it used to build `x -> g(x) < _`,
+  which nothing could call).
+- **`._()` — the application form on a projection.** On `_`, application is `_(a, b)`; on a projection
+  that spelling is taken, since calling an `fn` means "call this closure". So the vocabulary carries
+  it under the placeholder's own name: `_.x()._()` invokes what `_.x()` produced and `._(a, b)` calls
+  it with those arguments. Returns an `fn`, so a callable-returning chain keeps going.
+
 ## Range-adaptor verbs (implemented, opt-in `TACIT_VIEWS`)
 
 A pipeline written point-free *through* `_`, so the dots sit on `_` rather than on the range:
