@@ -412,6 +412,98 @@ parameter-kind split that makes `bind` need `quote<F>`, surfacing on the project
 rather than one is the price of that asymmetry; the common (nullary) case pays nothing for it, and
 nothing in the std table needs the templated form, so it stays opt-in and rarely reached for.
 
+### Four quadrants: the name-kind wall (findings, not yet built)
+
+The plan is two axes — **term** (values/functions) vs **type** (types/templates), and **open** (a hole,
+subject supplied later) vs **closed** (a lift, bringing a plain C++ thing into the world so it has a
+surface at all):
+
+```
+              open (hole)                closed (lift)
+term          _.f()   _(x)               $(42).f()
+type          __<int>   __<>             $$<std::map>::of<X>
+```
+
+`__<int>` is not "wrapping int": it is the *head* position being the hole, exactly as `_.push_back(y)`
+holes the receiver. One awaits an object, the other awaits a template — `__<int>::of<std::vector>` is
+`std::vector<int>`.
+
+**The wall.** A name denotes one *kind* of entity per scope, and no trick gets around it. Everything
+tried, all rejected by the compiler:
+
+| attempt | result |
+| --- | --- |
+| class template `_` + variable `_` | `redefinition of '_' as different kind of symbol` |
+| …+ variable of an unrelated type, or a function `_()` | same |
+| variable template `_` + variable `_` | same |
+| `namespace _` + variable `_` | same |
+| concept `_`, typedef-name `_`, alias template `_`, each + variable `_` | same |
+| member named `_` inside `struct _` (`_::_`) | `member '_' has the same name as its class` |
+| two inline namespaces merging both | `reference to '_' is ambiguous` |
+| bare use of a variable template | `requires template arguments` |
+
+Only a **class** name and an **enum** name may share a name with a variable — the C struct-hack, which
+is exactly what today's `struct _` exploits. It does not extend to templates. Conversions, inheritance
+and `constexpr` are all irrelevant here: the conflict is resolved at *name lookup*, before types or
+values exist, so there is nothing yet to convert from. No future language version changes this.
+
+**And the clincher:** if `_` were a template, `_ < _` stops parsing — the compiler reads `_<` as a
+template-argument list (`expected '>'`) and `_ + _` fails because a template-name is not an expression.
+Making `_` a template does not cost notation at the margin; it deletes the term world.
+
+**Resolution.** The core declares one ordinary, conforming name — `tacit::blank<A...>` — whose bare
+specialisation is also the type of the value: `decltype(_)` *is* `blank<>`, so the two worlds are one
+template rather than a visual pun. Users who want the short spelling write one line of their own:
+
+```cpp
+template <class... A> using __ = tacit::blank<A...>;   // or _t, or Ty, or whatever
+```
+
+Verified transparent: trait matching, partial specialisations written in the alias spelling, and
+deduction through it all see `blank`. `using __ = tacit::blank<>;` is *not* enough — a plain alias gives
+only the bare hole, and `__<int>` then fails; it has to be the alias-template form.
+
+That the alias is the user's own line is the point. The library never declares a reserved or
+non-conforming identifier, so the core stays strictly conforming, and the gamble — where there is one —
+is visible in the file that takes it. `<tacit/__.hpp>` and `<tacit/$.hpp>` are then one-liners, not
+design commitments, and no macro switch is needed.
+
+**Conformance ladder**, measured rather than assumed (clang, `-std=c++23`):
+
+| spelling | legal identifier? | `-pedantic-errors` | `-Wall -Wextra -Werror` |
+| --- | --- | --- | --- |
+| `_`, `_t` | yes; reserved only *in the global namespace* | compiles | passes |
+| `__` | yes, but reserved **everywhere, for any use** | compiles | passes |
+| `$`, `$$` | **not an identifier in standard C++** | **rejected** | passes |
+
+Each is caught only by its own opt-in warning — `-Wreserved-identifier` for the underscore forms,
+`-Wdollar-in-identifier-extension` for `$` (6 hits on a two-line file).
+
+`__` is a conforming program grabbing a name the implementation owns (ill-formed, no diagnostic
+required) — it survives strict mode and only breaks if a stdlib ever claims `__`; nothing does today.
+`$` is not C++ at all and dies under `-pedantic` deterministically. Two different bets, one rung apart.
+Ordinary word-shaped names (`t`, `ty`) are worse than either: any local of the same name hides the
+template and the error lands at the *use* site (`no template named 't'`) — and the reservation that makes
+`__`/`_t` formally risky is what makes them practically collision-proof. Conformance risk and collision
+risk point in opposite directions; collision is the one that bites daily.
+
+**`$` inherits the same wall**: `$(42)` is a function and `$<std::map>` a template, so they collide
+exactly as `_` did (`redefinition of '$' as different kind of symbol`) and the closed column needs its
+own second name, `$$`. The 2×2 of names is forced by the language, not chosen.
+
+**The crossing was tried and rejected.** Giving `_` to the type world (native `_<int>`, no alias, no
+reserved name) and `$` to the term world compiles, and both crossed spellings work — `_()` and `_{}` are
+usable term holes, and `$<>` works if `$` is a variable *template* (which then costs bare `$`, the same
+either/or). It was rejected because it inverts the priority: it hands the clean native spelling to the
+rarer world and taxes the constant one, either with `$` — which makes the **core** non-conforming, not
+a quarantined header — or with `_()` at every single use (`sort(v, _() < _())`). A once-per-project
+alias line beats a per-expression tax. Worth keeping in the back pocket: `_()` / `_{}` being valid term
+holes means that if `_` ever must become a template, the term world degrades rather than vanishes.
+
+**Still open**: reconciling `blank<int>::of<F>` (head-hole) with today's `bind`/`apply` (arg-hole) so
+they are one mechanism; and the conforming core name for the closed/term cell that `$(42)` is notation
+for.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted
