@@ -335,6 +335,31 @@ concept has_get_at = requires(X &&x) { tacit::detail::get_<I>(static_cast<X &&>(
 template <class T, class X>
 concept has_get_type = requires(X &&x) { tacit::detail::get_<T>(static_cast<X &&>(x)); };
 
+// The other std names spelled with a TYPE argument: `_.any_cast<int>()`, `_.duration_cast<seconds>()`.
+// Each is reached UNQUALIFIED, by ADL at instantiation — P0846 (C++20) makes `f<T>(x)` treat `f` as a
+// template name when ordinary lookup finds nothing, which is what lets `any_cast<T>(a)` resolve for a
+// `std::any` without this header including `<any>`. That matters: the include list here is eleven
+// headers, and pulling in `<any>`, `<variant>`, `<memory>` and `<chrono>` to name four functions most
+// callers never touch would tax every TU for nothing. A caller with a `std::any` has already included
+// `<any>`; one without has nothing for the name to apply to, and the concept below rejects it cleanly.
+//
+// These live in `detail`, not in the class, precisely so ordinary lookup finds nothing: inside the
+// class a member of the same name would be found first and the ADL step never happen.
+//
+// NOT here: chrono's `floor`/`ceil`/`round`. `<cmath>` is included (for the free-function table), so
+// `floor` IS visible to ordinary lookup and `floor<seconds>(x)` stops meaning what it looks like —
+// verified misbehaving. `duration_cast` covers the same ground under a name nothing else claims.
+#define TACIT_ADL_TFN(NAME)                                                                        \
+  template <class T, class X> [[nodiscard]] constexpr decltype(auto) NAME##_(X &&x) {              \
+    return NAME<T>(static_cast<X &&>(x));                                                          \
+  }                                                                                                \
+  template <class T, class X>                                                                      \
+  concept has_##NAME = requires(X &&x) { NAME<T>(static_cast<X &&>(x)); };
+#define TACIT_STD_TFREES(X)                                                                        \
+  X(any_cast) X(holds_alternative) X(duration_cast)                                                \
+  X(static_pointer_cast) X(dynamic_pointer_cast) X(const_pointer_cast)
+TACIT_STD_TFREES(TACIT_ADL_TFN)
+
 } // namespace detail
 
 // clang-format off
@@ -622,6 +647,24 @@ concept has_get_type = requires(X &&x) { tacit::detail::get_<T>(static_cast<X &&
   [[nodiscard]] static constexpr auto get_types() { return self::template get<Ts...>(); }           \
   template <std::size_t I>                                                                          \
   [[nodiscard]] static constexpr auto get_at() { return self::template get<I>(); }                  \
+  /* the rest of the type-argument family — `_.any_cast<int>()`, `_.duration_cast<seconds>()`, … */  \
+  TACIT_STD_TFREES(TACIT_TFREE1)                                                                    \
+  /* `_.to<std::vector>()` — C++23 `ranges::to`, the pipeline terminator. Both kinds of argument: a  \
+     TEMPLATE (`to<std::vector>`, element deduced) and a type (`to<std::vector<int>>`), which is the \
+     same kind-overload that lets `get<0>` and `get<int>` share a name. Qualified rather than ADL:   \
+     `to` lives in `std::ranges`, which a `std::vector` argument does not associate. */              \
+  template <template <class...> class C>                                                            \
+  [[nodiscard]] static constexpr auto to() {                                                        \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
+             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                 \
+             { return std::ranges::to<C>(std::forward<X>(x)); }};                                   \
+  }                                                                                                 \
+  template <class C>                                                                                \
+  [[nodiscard]] static constexpr auto to() {                                                        \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
+             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                 \
+             { return std::ranges::to<C>(std::forward<X>(x)); }};                                   \
+  }                                                                                                 \
   template <class I>                                                                               \
   [[nodiscard]] constexpr auto operator[](I&& i) const {                                           \
     if constexpr (tacit::detail::is_slot_v<I>) /* `_[_]` == (x, i) -> x[i] */                      \
@@ -677,6 +720,16 @@ concept has_get_type = requires(X &&x) { tacit::detail::get_<T>(static_cast<X &&
   [[nodiscard]] static constexpr auto NAME() {                                                     \
     return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
              requires requires(X&& xx) { FN(xx); } { return FN(std::forward<X>(x)); }};            \
+  }
+
+//  The same, for a free function whose argument is a TYPE rather than a value: `_.any_cast<int>()`.
+//  The subject is still the one call argument; the type rides in the template list.
+#define TACIT_TFREE1(NAME)                                                                         \
+  template <class T>                                                                               \
+  [[nodiscard]] static constexpr auto NAME() {                                                     \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
+             requires tacit::detail::has_##NAME<T, X>                                              \
+             { return tacit::detail::NAME##_<T>(std::forward<X>(x)); }};                           \
   }
 
 //  The free-function table: names that are free functions in std, kept small and numeric-leaning.
@@ -966,6 +1019,44 @@ template <class F, class Last> struct fn {
              { return FN(g(std::forward<X>(x)...)); }};                                            \
   }
   TACIT_STD_FREES(TACIT_FN_FREE1)
+#define TACIT_FN_TFREE1(NAME)                                                                      \
+  template <class T>                                                                               \
+  [[nodiscard]] constexpr auto NAME() const {                                                      \
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)                   \
+             requires tacit::detail::has_##NAME<                                                   \
+                 T, decltype(std::declval<fn const &>()(std::forward<X>(x)...))>                   \
+             { return tacit::detail::NAME##_<T>(g(std::forward<X>(x)...)); }};                     \
+  }
+  TACIT_STD_TFREES(TACIT_FN_TFREE1)
+  // tuple-like projection, composed: `_.front().get<0>()`. Both kinds, as on `_`.
+  template <std::size_t I>
+  [[nodiscard]] constexpr auto get() const {
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)
+             requires tacit::detail::has_get_at<
+                 I, decltype(std::declval<fn const &>()(std::forward<X>(x)...))>
+             { return tacit::detail::get_<I>(g(std::forward<X>(x)...)); }};
+  }
+  template <class T>
+  [[nodiscard]] constexpr auto get() const {
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)
+             requires tacit::detail::has_get_type<
+                 T, decltype(std::declval<fn const &>()(std::forward<X>(x)...))>
+             { return tacit::detail::get_<T>(g(std::forward<X>(x)...)); }};
+  }
+  template <template <class...> class C>
+  [[nodiscard]] constexpr auto to() const {
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)
+             requires requires(X &&...xx) {
+               std::ranges::to<C>(std::declval<fn const &>()(std::forward<X>(xx)...));
+             } { return std::ranges::to<C>(g(std::forward<X>(x)...)); }};
+  }
+  template <class C>
+  [[nodiscard]] constexpr auto to() const {
+    return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)
+             requires requires(X &&...xx) {
+               std::ranges::to<C>(std::declval<fn const &>()(std::forward<X>(xx)...));
+             } { return std::ranges::to<C>(g(std::forward<X>(x)...)); }};
+  }
 #ifdef TACIT_VOCABULARY_FILE
 #define TACIT_VERB(NAME) TACIT_FN_MEMBER(NAME);
 #define TACIT_FREE(NAME, FN) TACIT_FN_FREE1(NAME, FN)
@@ -1243,6 +1334,27 @@ struct _ {
 #endif
   [[nodiscard]] constexpr const detail::arrow* operator->() const { return &detail::arrow_v; }
   TACIT_CORE(_);
+
+  // FIELD-STYLE verbs: `_.first`, no parens. `pair`'s components are data members, not calls, and a
+  // projection of one reads better without empty parentheses — `sort(v, {}, _.first)` rather than
+  // `_.first()`. They are static data members holding a closure, which is why they live here rather
+  // than in TACIT_CORE: a `static constexpr fn<…>` needs `fn` COMPLETE, and TACIT_CORE is also
+  // expanded inside `fn` itself, where it is not. The practical consequence is that field style does
+  // not chain FROM a projection (`_.front().first` has no member to find) — spell that hop
+  // `_.front().get<0>()`, which is the same access by its other name.
+  //
+  // Nor does the lift mirror them: `$(p).first` would have to BE the value, and a data member cannot
+  // compute one from the subject. `$(p).get<0>()` is the closed-cell spelling. This is the single
+  // place `$(x).f() == _.f()(x)` does not apply, and it is because `.first` is not a call on either
+  // side — the rule is about calls.
+  static constexpr auto first =
+      tacit::detail::fn{[]<class X>(X &&x) -> decltype(auto)
+                          requires requires(X &&xx) { std::forward<X>(xx).first; }
+                        { return (std::forward<X>(x).first); }};
+  static constexpr auto second =
+      tacit::detail::fn{[]<class X>(X &&x) -> decltype(auto)
+                          requires requires(X &&xx) { std::forward<X>(xx).second; }
+                        { return (std::forward<X>(x).second); }};
 };
 inline constexpr _ _;
 
@@ -1412,6 +1524,25 @@ template <class T> struct held {
 #undef TACIT_HELD_MEMBER
 #undef TACIT_HELD_CPO1
 #undef TACIT_HELD_FREE1
+#define TACIT_HELD_TFREE1(NAME)                                                                    \
+  template <class U>                                                                               \
+    requires has_##NAME<U, T const &>                                                              \
+  [[nodiscard]] constexpr decltype(auto) NAME() const {                                            \
+    return tacit::detail::NAME##_<U>(v);                                                           \
+  }
+  TACIT_STD_TFREES(TACIT_HELD_TFREE1)
+#undef TACIT_HELD_TFREE1
+  template <template <class...> class C>
+    requires requires(T const &x) { std::ranges::to<C>(x); }
+  [[nodiscard]] constexpr decltype(auto) to() const {
+    return std::ranges::to<C>(v);
+  }
+  template <class C>
+    requires requires(T const &x) { std::ranges::to<C>(x); }
+  [[nodiscard]] constexpr decltype(auto) to() const {
+    return std::ranges::to<C>(v);
+  }
+
   // `$(t).get<0>()` — the lift's half of the tuple-like projection, so the rule `$(x).f(a…)` ==
   // `_.f(a…)(x)` holds for the one verb whose argument is a template argument. Non-static and
   // `const`, matching the member table, so these overload with the plain `get` rather than clashing

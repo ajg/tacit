@@ -98,6 +98,35 @@ a member function template, so `_.get<0>()` is legal where `_<0>` is not. Both `
 under one name because member function templates, unlike class templates, can be overloaded on
 parameter kind.
 
+The rest of the **type-argument** family follows the same shape:
+
+```cpp
+_.to<std::vector>()                     // C++23 ranges::to — the pipeline terminator
+_.to<std::vector<long>>()               // ...or spelled out
+_.any_cast<int>()                       _.holds_alternative<std::string>()
+_.duration_cast<std::chrono::seconds>() _.static_pointer_cast<Derived>()
+```
+
+These are reached *unqualified*, by ADL — so the header still includes eleven standard headers and
+not `<any>`, `<variant>`, `<memory>` or `<chrono>`. A caller holding a `std::any` has already
+included `<any>`; one who isn't gets a clean rejection. (`ranges::to` is the exception: `std::ranges`
+isn't an associated namespace of `std::vector`, so it's qualified — `<ranges>` was already included.)
+
+**Field-style verbs.** `pair`'s components are data members, not calls, and read better without empty
+parentheses:
+
+```cpp
+std::ranges::sort(v, {}, _.first);           // not _.first()
+std::ranges::count_if(v, _.second.size() == 2u)
+_.first(p) = 9;                              // a reference, so it writes through
+```
+
+Two limits, both from `first` being a *field* rather than a call. It does not chain **from** a
+projection — `_.front().first` has no member to find — and the lift does not mirror it, since
+`$(p).first` would have to *be* the value and a data member can't compute one. Both hops spell the
+same access as `.get<0>()`. This is the one place `$(x).f() == _.f()(x)` doesn't apply, because the
+rule is about calls.
+
 There is a type-level table too — see *Type level*, below.
 
 ### Operator sections
