@@ -544,11 +544,36 @@ Everything tried, all rejected by the compiler:
 | member named `_` inside `struct _` (`_::_`) | `member '_' has the same name as its class` |
 | two inline namespaces merging both | `reference to '_' is ambiguous` |
 | bare use of a variable template | `requires template arguments` |
+| `struct _` with **templated constructors**, hoping for `_<int>` | `expected unqualified-id` — see below |
 
 Only a **class** name and an **enum** name may share a name with a variable — the C struct-hack, which
-is exactly what today's `struct _` exploits. It does not extend to templates. Conversions, inheritance
-and `constexpr` are all irrelevant: the conflict resolves at *name lookup*, before types or values
-exist, so there is nothing yet to convert from. No future language version changes this.
+is exactly what today's `struct _` exploits. It does not extend to templates. Note how narrow this is:
+even a plain `using _ = H;` beside a variable `_` is a redefinition, so the exemption is not about
+"type names" generally — it is specifically about a **class-head name**, one introduced by
+`class`/`struct`/`union`/`enum`. Conversions, inheritance and `constexpr` are all irrelevant: the
+conflict resolves at *name lookup*, before types or values exist, so there is nothing yet to convert
+from. No future language version changes this.
+
+**Templated constructors do not open a back door**, and it is worth being precise about why, since the
+idea is a natural one: keep `_` a class (so the exemption survives) and put the template parameters on
+its constructors instead of on the class, hoping to buy `_<int>` without becoming a template. Three
+independent walls, any one of them fatal:
+
+1. **A constructor's template arguments can never be written explicitly.** There is no syntax for it —
+   not `_<int>(x)` (`expected unqualified-id`), not `_::_<int>(x)` (`qualified reference to '_' is a
+   constructor name rather than a type`). They are always deduced from the arguments. So a constructor
+   template gives `_(x)`, never `_<int>`.
+2. Even granting (1), `_<int>` requires `_` to *name a template* at the point of parse, which is the
+   redefinition in row 1 of the table.
+3. Even granting (1) and (2), the variable `_` **hides** the class in expression contexts, so `_(42)`
+   is a call on the variable and can never reach a constructor at all. Reaching the class in an
+   expression needs an elaborated-type-specifier, which has no expression form.
+
+The general shape: `<…>` after a **bare** name always demands that the name be a template, and that is
+the one thing `_` can never be. What survives is `<…>` after a `.` or a `::` — member function
+templates and member class templates *do* take explicit template arguments, which is exactly the route
+`_::hole<int>`, `_::rebind<double>` and `_.of<F>()` already take. That is the open axis; the bare one is
+closed for good.
 
 **The clincher**: if `_` were a template, `_ < _` stops parsing — the compiler reads `_<` as a
 template-argument list (`expected '>'`), and `_ + _` fails because a template-name is not an
