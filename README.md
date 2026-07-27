@@ -227,6 +227,42 @@ The vocabulary grew a third dispatch kind for this: beside member calls and the 
 are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `ceil`, `round`, `log`, `isnan`, …)
 route to `std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
 
+### Making a value: `make` and partial CTAD
+
+`lift` adopts a value that exists. `tacit::make<F>(a…)` builds one:
+
+```cpp
+make<std::vector>(1, 2, 3)                  // std::vector<int>{1,2,3}   — plain CTAD
+make<std::vector, double>(1.0, 2.0)         // std::vector<double>       — arguments given
+make<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>  — PARTIAL CTAD
+```
+
+The third line is the one C++ cannot otherwise spell. Class template argument deduction is
+all-or-nothing: the moment you want to fix *one* argument you must write them all, including the ones
+the compiler was about to work out for you. `std::set<int, std::greater<>>{3,1,2}` re-types that `int`
+by hand — and it is exactly the argument most likely to change out from under you. A `_` in the list
+means **deduce this position**; everything else is fixed, and trailing parameters you never mention
+re-default as usual:
+
+```cpp
+make<std::map, _, _, std::greater<>>(pairs…)          // deduce key and mapped type, fix the order
+make<std::unordered_map, _, _, _, _, MyAlloc>(p)      // deduce four, fix the allocator
+```
+
+It works by deducing the whole specialization and then overlaying the positions you fixed — the same
+structural decomposition `_::rebind` does. Deduction runs first and unmodified, so the deduced
+positions are exactly what plain CTAD would have given.
+
+`make` returns the **value itself**, not a lift of it: `lift(x)` is a view of a subject that outlives
+it, while `make<F>(…)` creates the subject and so must own it. `auto v = make<std::vector>(1,2,3)` is
+a `std::vector` you can hand to anything. Wrap it in `lift`/`$` if you want the vocabulary.
+
+Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>` families
+(`array`, `span`) are out of reach — no loss, since their extent is deduced and their one type
+argument is all partial CTAD could have fixed. And holes reach four positions deep, which covers every
+standard container: a hole means "deduce", and a *trailing* deduced argument is already deduced by
+simply not writing it, so holes only ever need to reach as far as the last argument you fix.
+
 ### The `$` wrapper (opt-in)
 
 `$` is `tacit::lift` under a shorter name, behind `#define TACIT_DOLLAR`:
@@ -257,9 +293,25 @@ $(ptr).use_count()  // the holder's own vocabulary, on the dot surface
 a wrapper, so `$(v).front()` is a `std::string&`. If you need two hops you are describing a
 computation, and that is `_`'s job — `_.front().size()(v)` says it better, and is reusable.
 
+Because `$` is a function *template*, `$<F>(a…)` is `make<F>(a…)` — the other closed cell, under the
+same short name. `$(x)` adopts a value; `$<F>(…)` builds one:
+
+```cpp
+$<std::vector>(1, 2, 3)                  // std::vector<int>
+$<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>
+```
+
+The two can never collide: a call with no explicit template arguments cannot deduce `F`, so `$(42)`
+only ever reaches the lift.
+
+That is as far as `$` reaches into the type world, and the boundary is the language's rather than a
+choice: `$` is a function, so `$<std::map>::anything` is ill-formed — a qualified name cannot refer
+into a specialization of a function template. `$<F>` yields values. Naming a *type* still wants
+`hole`/`bind`/`apply`/`rebind`, or `decltype` around a `make`.
+
 It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
-`-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift`; nothing is
-`$`-only, and a default build never sees it.
+`-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift` and
+`tacit::make`; nothing is `$`-only, and a default build never sees it.
 
 ## Type level
 

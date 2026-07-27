@@ -1433,6 +1433,142 @@ template <class... Slots> struct apply {
 // toolchain, same posture as the reflective member hatch.
 #endif
 
+// ------------------------------------------------------------------------------------------------
+// `make` — the closed cell that BUILDS a value, where `lift` adopts one that already exists:
+//
+//   make<std::vector>(1, 2, 3)                    // std::vector<int>{1,2,3}     — plain CTAD
+//   make<std::vector, double>(1.0, 2.0)           // std::vector<double>         — arguments given
+//   make<std::set, _, std::greater<>>(3, 1, 2)    // std::set<int, greater<>>    — PARTIAL CTAD
+//
+// The third line is the one C++ cannot otherwise spell. CTAD is all-or-nothing: the moment you want
+// to fix *one* template argument you must write them all, including the ones the compiler was about
+// to work out for you (`std::set<int, std::greater<>>{3,1,2}` — the `int` is pure re-typing, and it
+// is the argument most likely to change). A `_` in the list means "deduce this position"; everything
+// else is fixed, and trailing parameters you do not mention re-default as usual.
+//
+// It works by deducing the whole specialisation and then overlaying the positions the caller fixed —
+// the same structural decomposition `rebind` does, so the two share a notion of "same template,
+// different arguments". Deduction runs first and unmodified, which is what keeps the deduced
+// positions exactly what plain CTAD would have given.
+//
+// `make` returns the value ITSELF, not a lift of it. `lift(x)` is a view of a subject that outlives
+// it, so it must not copy; `make<F>(a...)` creates the subject, so it must own. A lift of a
+// temporary would dangle at the semicolon, and a caller writing `auto v = make<std::vector>(1,2,3)`
+// wants a `std::vector` they can hand to anything — not a wrapper. Call `.f()` on it and you are
+// calling the real member; wrap it in `lift`/`$` if you want the vocabulary.
+//
+// HOW `_` SITS AMONG TYPES. A template parameter list is single-kind — one pack holds types or
+// values, never both — so `<std::map, _, int>` cannot be one variadic parameter: `_` is a *value*
+// (name lookup finds the variable, so the argument parses as an expression) and `int` is a type.
+// Function templates are the one construct that escapes this, because they can be OVERLOADED on
+// parameter kind, which class templates cannot be. So the hole patterns are enumerated: one overload
+// per arrangement of holes, each ending in a trailing `class... B` pack that soaks up the fixed
+// arguments after the last hole. All-types lists need no enumeration at all — the plain variadic
+// overload takes them — so only lists that actually contain a hole pay for it.
+//
+// Depth 4 is enough for the standard library and then some: a hole means "deduce", and a *trailing*
+// deduced argument is already deduced by simply not writing it, so holes only ever need to reach as
+// far as the last argument you fix. Four covers the deepest real case — `unordered_map`'s
+// <Key, T, Hash, KeyEqual> ahead of a fixed allocator. Past that, `bind`/`apply` still spell it at
+// type level, and a hole nobody enumerated is a hard error rather than a wrong answer.
+//
+// SHAPE. `F` is `template <class...> class`, so the `<class, std::size_t>` families (`array`, `span`)
+// are out of reach — as they are for any template-template parameter. Nothing is lost: their extent
+// is deduced and their one type argument is the only thing partial CTAD could fix, so plain CTAD
+// (`std::array{1,2,3}`) already says everything. `rebind` covers that shape at type level, where the
+// second, non-type parameter can be matched explicitly.
+namespace detail {
+template <class T> concept blank_value = is_blank_v<T>;
+
+// Split a deduced specialisation into its template and its arguments (cf. `rebind_`, which replaces
+// them wholesale; here each position is replaced only if the caller fixed it).
+template <class X> struct parts_of;
+template <template <class...> class F, class... A> struct parts_of<F<A...>> {
+  template <class... X> using rebound = F<X...>;
+  using args = std::tuple<A...>;
+};
+template <class Fixed, class Deduced> struct pick_slot {
+  using type = Fixed;
+};
+template <class Deduced> struct pick_slot<blank, Deduced> {
+  using type = Deduced;
+};
+// Position I: the caller's type if they named one there, the deduced type if they wrote `_` or ran
+// off the end of the fixed list.
+template <std::size_t I, class Fixed, class Deduced> struct slot_at {
+  static constexpr bool named = I < std::tuple_size_v<Fixed>;
+  using type = typename pick_slot<
+      std::tuple_element_t<named ? I : 0, std::conditional_t<named, Fixed, std::tuple<blank>>>,
+      std::tuple_element_t<I, Deduced>>::type;
+};
+template <class Deduced, class Fixed, class Idx> struct overlay_;
+template <class Deduced, class Fixed, std::size_t... I>
+struct overlay_<Deduced, Fixed, std::index_sequence<I...>> {
+  using type = typename parts_of<Deduced>::template rebound<
+      typename slot_at<I, Fixed, typename parts_of<Deduced>::args>::type...>;
+};
+template <class Deduced, class... Fixed>
+using overlay =
+    typename overlay_<Deduced, std::tuple<Fixed...>,
+                      std::make_index_sequence<
+                          std::tuple_size_v<typename parts_of<Deduced>::args>>>::type;
+
+template <template <class...> class F, class... Fixed, class... A>
+[[nodiscard]] constexpr auto make_(A &&...a) {
+  if constexpr (sizeof...(Fixed) == 0)
+    return F{static_cast<A &&>(a)...}; // nothing fixed: plain CTAD, deduction guides and all
+  // NB `is_same_v<_, blank>`, not `is_blank_v` — by the time a `_` argument reaches here it has been
+  // rewritten to the type-level marker `blank`; `is_blank_v` answers for the placeholder VALUE's type.
+  else if constexpr (!(std::is_same_v<Fixed, blank> || ...))
+    return F<Fixed...>{static_cast<A &&>(a)...}; // nothing deduced: the arguments as given
+  else // both: deduce, then overlay what was fixed
+    return overlay<decltype(F{std::declval<A>()...}), Fixed...>{static_cast<A &&>(a)...};
+}
+} // namespace detail
+
+#define TACIT_UNPAREN(...) __VA_ARGS__
+#define TACIT_MAKE_HOLE tacit::detail::blank            /* the fixed-list marker: deduce here */
+#define TACIT_MAKE_SLOT tacit::detail::blank_value auto /* the parameter slot a `_` argument binds */
+#define TACIT_MAKE_ONE(NAME, PARAMS, FIXED)                                                        \
+  template <template <class...> class F, TACIT_UNPAREN PARAMS, class... B>                         \
+  [[nodiscard]] constexpr auto NAME(auto &&...a) {                                                 \
+    return tacit::detail::make_<F, TACIT_UNPAREN FIXED, B...>(static_cast<decltype(a)>(a)...);     \
+  }
+// The whole overload set under one name — `make` always, `$` too when it is enabled.
+#define TACIT_MAKE_OVERLOADS(NAME)                                                                 \
+  template <template <class...> class F, class... B>                                               \
+  [[nodiscard]] constexpr auto NAME(auto &&...a) {                                                 \
+    return tacit::detail::make_<F, B...>(static_cast<decltype(a)>(a)...);                          \
+  }                                                                                                \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0), (TACIT_MAKE_HOLE))                                         \
+  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1), (A0, TACIT_MAKE_HOLE))                           \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1), (TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))          \
+  TACIT_MAKE_ONE(NAME, (class A0, class A1, TACIT_MAKE_SLOT A2), (A0, A1, TACIT_MAKE_HOLE))             \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, TACIT_MAKE_SLOT A2),                          \
+                 (TACIT_MAKE_HOLE, A1, TACIT_MAKE_HOLE))                                                    \
+  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2),                          \
+                 (A0, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))                                                    \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2),                 \
+                 (TACIT_MAKE_HOLE, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))                                            \
+  TACIT_MAKE_ONE(NAME, (class A0, class A1, class A2, TACIT_MAKE_SLOT A3),                         \
+                 (A0, A1, A2, TACIT_MAKE_HOLE))                                                        \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, class A2, TACIT_MAKE_SLOT A3),                \
+                 (TACIT_MAKE_HOLE, A1, A2, TACIT_MAKE_HOLE))                                                \
+  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, class A2, TACIT_MAKE_SLOT A3),                \
+                 (A0, TACIT_MAKE_HOLE, A2, TACIT_MAKE_HOLE))                                                \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, class A2, TACIT_MAKE_SLOT A3),       \
+                 (TACIT_MAKE_HOLE, TACIT_MAKE_HOLE, A2, TACIT_MAKE_HOLE))                                        \
+  TACIT_MAKE_ONE(NAME, (class A0, class A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),                \
+                 (A0, A1, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))                                                \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),       \
+                 (TACIT_MAKE_HOLE, A1, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))                                        \
+  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),       \
+                 (A0, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))                                        \
+  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),\
+                 (TACIT_MAKE_HOLE, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE, TACIT_MAKE_HOLE))
+
+TACIT_MAKE_OVERLOADS(make)
+
 // Heterogeneous element combinators: drive a callable over the elements of a
 // tuple-like. Built on std::apply + fold-expressions (C++23); a `template for`
 // (C++26) path can later extend them to arbitrary aggregates and reflection
@@ -1578,6 +1714,16 @@ public:
 #ifdef TACIT_DOLLAR
 namespace tacit {
 template <class X> [[nodiscard]] constexpr auto $(X &&x) { return lift(static_cast<X &&>(x)); }
+
+// ...and `$<F>(a...)` is `make<F>(a...)`, the other closed cell: `$(x)` adopts a value, `$<F>(...)`
+// builds one. The two never collide — a call with no explicit template arguments cannot deduce `F`,
+// so `$(42)` only ever reaches the lift, and `$<std::vector>(1,2,3)` only ever reaches `make`.
+//
+// This is as far as `$` can go into the type world, and the boundary is the language's, not a
+// choice: `$` is a *function*, so `$<std::map>::anything` is ill-formed — a qualified name cannot
+// refer into a specialisation of a function template. `$<F>` yields values; naming a type still
+// wants `hole`/`bind`/`apply`/`rebind`, or `decltype` around a `make`.
+TACIT_MAKE_OVERLOADS($)
 } // namespace tacit
 #ifdef TACIT_USING_UNDERSCORE
 using tacit::$;
@@ -1602,6 +1748,11 @@ using tacit::_;
 // One macro survives on the clean path: `TACIT_HAS_REFLECTION`, a feature flag (not a generator), so
 // you can `#if` on whether the reflective members (m / field / enum_name / each_field) exist; testing
 // that yourself would otherwise mean re-deriving tacit's `__cpp_*` condition.
+#undef TACIT_UNPAREN
+#undef TACIT_MAKE_HOLE
+#undef TACIT_MAKE_SLOT
+#undef TACIT_MAKE_ONE
+#undef TACIT_MAKE_OVERLOADS
 #undef TACIT_MEMBER
 #undef TACIT_ARROW_MEMBER
 #undef TACIT_VIEW

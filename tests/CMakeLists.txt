@@ -1,4 +1,4 @@
-foreach(t strict_using blanks using_underscore showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift dollar vocabulary_file)
+foreach(t strict_using blanks using_underscore showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift make dollar vocabulary_file)
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE tacit::tacit)
   target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

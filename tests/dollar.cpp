@@ -7,9 +7,12 @@
 
 #include <algorithm>
 #include <cassert>
+#include <functional>
 #include <memory>
 #include <ranges>
+#include <set>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using tacit::_;
@@ -71,6 +74,26 @@ int main() {
   {
     assert(tacit::$(-1).abs() == 1);
     assert(tacit::lift(-1).abs() == tacit::$(-1).abs());   // same thing, two spellings
+  }
+
+  // ---- and because it is a function TEMPLATE, `$<F>(a...)` is `make<F>(a...)`: the other closed
+  // cell. `$(x)` adopts a value that exists; `$<F>(...)` builds one. They cannot collide — a call
+  // with no explicit template arguments cannot deduce `F`, so it only ever reaches the lift.
+  {
+    auto v = $<std::vector>(1, 2, 3);                          // plain CTAD
+    static_assert(std::is_same_v<decltype(v), std::vector<int>>);
+    auto d = $<std::vector, double>(1.0, 2.0);                 // arguments given
+    static_assert(std::is_same_v<decltype(d), std::vector<double>>);
+    auto s = $<std::set, _, std::greater<>>(3, 1, 2);          // partial: deduce the element
+    static_assert(std::is_same_v<decltype(s), std::set<int, std::greater<>>>);
+    assert(*s.begin() == 3);
+    assert(($<std::vector>(1, 2, 3) == tacit::make<std::vector>(1, 2, 3)));   // the same function
+    assert($(-1).abs() == 1);                                  // ...and the lift is untouched
+
+    // the result is the value itself, not a lift of it: `$(x)` is a view of a subject that outlives
+    // it, `$<F>(...)` creates the subject and so must own it
+    static_assert(!std::is_same_v<decltype($<std::vector>(1)), decltype($(v))>);
+    assert($($<std::vector>(1, 2, 3)).size() == 3);            // wrap it if you want the vocabulary
   }
 
   // ---- the governing rule, and the term world it sits beside ----

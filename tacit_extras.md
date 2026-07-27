@@ -451,6 +451,27 @@ that needs no marker. See `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typepr
 
 #### Where it landed (decision)
 
+> **Superseded in part — read this first.** The grid below was the plan; what shipped is narrower and
+> better founded. `$` is a plain **function template in `namespace tacit`**, not an alias template and
+> not a macro, and it is **term-only**: `$(x)` lifts a value, `$<F>(a…)` builds one (`make`). The type
+> world kept its conforming spelling (`hole`/`bind`/`apply`/`rebind`) and never moved onto `$`.
+>
+> The reason is a language rule the plan below did not account for: **`$` is a function, so
+> `$<std::map>::anything` is ill-formed** — a qualified name cannot refer into a specialization of a
+> function template. A function can *return* a value but can never *be* a scope, so no amount of
+> cleverness makes `$<…>::…` name a type. The alias-template-plus-macro scheme in the plan was the only
+> way to get both, and it was dropped when `$` became a function (which bought namespacing, ADL,
+> qualification, and freedom from include-order rules).
+>
+> **What a function template buys instead**, and it is not nothing: function templates are the one
+> construct that can be **overloaded on parameter kind**, which class templates cannot be. So an
+> explicit argument list may mix a *value* `_` with *types* — `$<std::map, _, int>` — if the overloads
+> are enumerated, one per arrangement of holes. That is what makes `make`'s partial CTAD spellable
+> (`make<std::set, _, std::greater<>>(3,1,2)`), and it is the only place in the library where `_` sits
+> among types in a template-argument list. It resolves the "holes among arguments" problem below at
+> *term* level — where a hole can be enumerated cheaply because the result is a value — while the type
+> level, needing a class template, stays walled off exactly as described.
+
 ```
                 open (hole)                     closed (given)
   term          _    _.f()  _ < _  _(x)         $(42).f()
