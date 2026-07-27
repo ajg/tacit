@@ -44,6 +44,9 @@ int main() {
   }
 
   // ---- `ranges::to`: the pipeline terminator, in both kinds of argument ----
+  // Feature-tested: C++23, but libstdc++ shipped it in 14 and libc++ in 17, so g++-13 does not have
+  // it and `_.to<C>()` is simply not declared there.
+#if TACIT_HAS_RANGES_TO
   {
     auto r = std::views::iota(1, 4);
     auto v = _.to<std::vector>()(r);              // template argument, element deduced
@@ -55,13 +58,16 @@ int main() {
     std::vector<std::vector<int>> vv{{1, 2, 3}};
     assert(_.front().to<std::vector>()(vv).size() == 3);
   }
+#endif
 
   // ---- the lift mirrors them: `$(x).f<T>() == _.f<T>()(x)` ----
   {
     std::any a = 42;
     assert(tacit::lift(a).any_cast<int>() == _.any_cast<int>()(a));
+#if TACIT_HAS_RANGES_TO
     auto r = std::views::iota(1, 4);
     assert(tacit::lift(r).to<std::vector>().size() == 3);
+#endif
   }
 
   // ---- field-style verbs: a projection of a data member, no parens ----

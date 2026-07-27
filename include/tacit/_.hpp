@@ -103,6 +103,7 @@
 #include <cstddef>
 #include <functional>
 #include <ranges>
+#include <version>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -349,6 +350,15 @@ concept has_get_type = requires(X &&x) { tacit::detail::get_<T>(static_cast<X &&
 // NOT here: chrono's `floor`/`ceil`/`round`. `<cmath>` is included (for the free-function table), so
 // `floor` IS visible to ordinary lookup and `floor<seconds>(x)` stops meaning what it looks like —
 // verified misbehaving. `duration_cast` covers the same ground under a name nothing else claims.
+// `std::ranges::to` is C++23 but shipped late (libstdc++ 14, libc++ 17); g++-13 and the clang-18 CI
+// image do not have it. Feature-tested rather than assumed, so `_.to<C>()` simply is not declared
+// where the library cannot back it — the same posture as TACIT_HAS_REFLECTION.
+#if defined(__cpp_lib_ranges_to_container) && __cpp_lib_ranges_to_container >= 202202L
+#define TACIT_HAS_RANGES_TO 1
+#else
+#define TACIT_HAS_RANGES_TO 0
+#endif
+
 #define TACIT_ADL_TFN(NAME)                                                                        \
   template <class T, class X> [[nodiscard]] constexpr decltype(auto) NAME##_(X &&x) {              \
     return NAME<T>(static_cast<X &&>(x));                                                          \
@@ -649,22 +659,7 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
   [[nodiscard]] static constexpr auto get_at() { return self::template get<I>(); }                  \
   /* the rest of the type-argument family — `_.any_cast<int>()`, `_.duration_cast<seconds>()`, … */  \
   TACIT_STD_TFREES(TACIT_TFREE1)                                                                    \
-  /* `_.to<std::vector>()` — C++23 `ranges::to`, the pipeline terminator. Both kinds of argument: a  \
-     TEMPLATE (`to<std::vector>`, element deduced) and a type (`to<std::vector<int>>`), which is the \
-     same kind-overload that lets `get<0>` and `get<int>` share a name. Qualified rather than ADL:   \
-     `to` lives in `std::ranges`, which a `std::vector` argument does not associate. */              \
-  template <template <class...> class C>                                                            \
-  [[nodiscard]] static constexpr auto to() {                                                        \
-    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
-             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                 \
-             { return std::ranges::to<C>(std::forward<X>(x)); }};                                   \
-  }                                                                                                 \
-  template <class C>                                                                                \
-  [[nodiscard]] static constexpr auto to() {                                                        \
-    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
-             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                 \
-             { return std::ranges::to<C>(std::forward<X>(x)); }};                                   \
-  }                                                                                                 \
+  TACIT_TO_MEMBERS                                                                                   \
   template <class I>                                                                               \
   [[nodiscard]] constexpr auto operator[](I&& i) const {                                           \
     if constexpr (tacit::detail::is_slot_v<I>) /* `_[_]` == (x, i) -> x[i] */                      \
@@ -724,6 +719,28 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
 
 //  The same, for a free function whose argument is a TYPE rather than a value: `_.any_cast<int>()`.
 //  The subject is still the one call argument; the type rides in the template list.
+// `_.to<std::vector>()` — C++23 `ranges::to`, the pipeline terminator. Both kinds of argument: a
+// TEMPLATE (`to<std::vector>`, element deduced) and a type (`to<std::vector<int>>`), the same
+// kind-overload that lets `get<0>` and `get<int>` share a name. Qualified rather than reached by ADL:
+// `to` lives in `std::ranges`, which a `std::vector` argument does not associate.
+#if TACIT_HAS_RANGES_TO
+#define TACIT_TO_MEMBERS                                                                           \
+  template <template <class...> class C>                                                           \
+  [[nodiscard]] static constexpr auto to() {                                                       \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
+             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                \
+             { return std::ranges::to<C>(std::forward<X>(x)); }};                                  \
+  }                                                                                                \
+  template <class C>                                                                               \
+  [[nodiscard]] static constexpr auto to() {                                                       \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                  \
+             requires requires(X&& xx) { std::ranges::to<C>(std::forward<X>(xx)); }                \
+             { return std::ranges::to<C>(std::forward<X>(x)); }};                                  \
+  }
+#else
+#define TACIT_TO_MEMBERS
+#endif
+
 #define TACIT_TFREE1(NAME)                                                                         \
   template <class T>                                                                               \
   [[nodiscard]] static constexpr auto NAME() {                                                     \
@@ -1043,6 +1060,7 @@ template <class F, class Last> struct fn {
                  T, decltype(std::declval<fn const &>()(std::forward<X>(x)...))>
              { return tacit::detail::get_<T>(g(std::forward<X>(x)...)); }};
   }
+#if TACIT_HAS_RANGES_TO
   template <template <class...> class C>
   [[nodiscard]] constexpr auto to() const {
     return tacit::detail::fn{[g = *this]<class... X>(X &&...x) -> decltype(auto)
@@ -1057,6 +1075,7 @@ template <class F, class Last> struct fn {
                std::ranges::to<C>(std::declval<fn const &>()(std::forward<X>(xx)...));
              } { return std::ranges::to<C>(g(std::forward<X>(x)...)); }};
   }
+#endif
 #ifdef TACIT_VOCABULARY_FILE
 #define TACIT_VERB(NAME) TACIT_FN_MEMBER(NAME);
 #define TACIT_FREE(NAME, FN) TACIT_FN_FREE1(NAME, FN)
@@ -1532,6 +1551,7 @@ template <class T> struct held {
   }
   TACIT_STD_TFREES(TACIT_HELD_TFREE1)
 #undef TACIT_HELD_TFREE1
+#if TACIT_HAS_RANGES_TO
   template <template <class...> class C>
     requires requires(T const &x) { std::ranges::to<C>(x); }
   [[nodiscard]] constexpr decltype(auto) to() const {
@@ -1542,6 +1562,7 @@ template <class T> struct held {
   [[nodiscard]] constexpr decltype(auto) to() const {
     return std::ranges::to<C>(v);
   }
+#endif
 
   // `$(t).get<0>()` — the lift's half of the tuple-like projection, so the rule `$(x).f(a…)` ==
   // `_.f(a…)(x)` holds for the one verb whose argument is a template argument. Non-static and
@@ -1948,9 +1969,15 @@ using tacit::_;
 // nothing downstream needs the internal generator macros — the header always cleans them up here, one
 // path, no TACIT_KEEP_MACROS switch.
 //
-// One macro survives on the clean path: `TACIT_HAS_REFLECTION`, a feature flag (not a generator), so
-// you can `#if` on whether the reflective members (m / field / enum_name / each_field) exist; testing
-// that yourself would otherwise mean re-deriving tacit's `__cpp_*` condition.
+// Two macros survive on the clean path, both feature flags rather than generators, so you can `#if`
+// on what the toolchain actually gave you without re-deriving tacit's `__cpp_*` conditions yourself:
+// `TACIT_HAS_REFLECTION` (are the reflective members m / field / enum_name / each_field present?) and
+// `TACIT_HAS_RANGES_TO` (is `_.to<C>()` present? — `std::ranges::to` is C++23 but shipped in
+// libstdc++ 14 and libc++ 17, so g++-13 builds do not have it).
+#undef TACIT_TO_MEMBERS
+#undef TACIT_ADL_TFN
+#undef TACIT_TFREE1
+#undef TACIT_STD_TFREES
 #undef TACIT_UNPAREN
 #undef TACIT_MAKE_BLANK
 #undef TACIT_MAKE_SLOT

@@ -107,10 +107,12 @@ _.any_cast<int>()                       _.holds_alternative<std::string>()
 _.duration_cast<std::chrono::seconds>() _.static_pointer_cast<Derived>()
 ```
 
-These are reached *unqualified*, by ADL — so the header still includes eleven standard headers and
+These are reached *unqualified*, by ADL — so the header still includes twelve standard headers and
 not `<any>`, `<variant>`, `<memory>` or `<chrono>`. A caller holding a `std::any` has already
 included `<any>`; one who isn't gets a clean rejection. (`ranges::to` is the exception: `std::ranges`
-isn't an associated namespace of `std::vector`, so it's qualified — `<ranges>` was already included.)
+isn't an associated namespace of `std::vector`, so it's qualified.) `ranges::to` is also
+feature-tested — it's C++23 but shipped in libstdc++ 14 and libc++ 17, so `_.to<C>()` is simply not
+declared on g++-13; `#if TACIT_HAS_RANGES_TO` to test for it.
 
 **Field-style verbs.** `pair`'s components are data members, not calls, and read better without empty
 parentheses:
