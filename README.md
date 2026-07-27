@@ -227,7 +227,7 @@ std::ranges::for_each(thunks, _()); // invoke each thunk
 
 ## The term wrapper
 
-`_` is a hole, awaiting its subject. `tacit::lift(x)` is the other side: it hands the vocabulary a
+`_` is a blank, awaiting its subject. `tacit::lift(x)` is the other side: it hands the vocabulary a
 subject it already has, and applies it **eagerly**.
 
 `tacit::lift(x)` is the term-level counterpart: it gives a plain value the vocabulary it may not have
@@ -301,9 +301,9 @@ value form meanwhile — `std::ranges::sort(v, {}, _.size())` — which needs no
 
 Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>` families
 (`array`, `span`) are out of reach — no loss, since their extent is deduced and their one type
-argument is all partial CTAD could have fixed. And holes reach four positions deep, which covers every
-standard container: a hole means "deduce", and a *trailing* deduced argument is already deduced by
-simply not writing it, so holes only ever need to reach as far as the last argument you fix.
+argument is all partial CTAD could have fixed. And blanks reach four positions deep, which covers every
+standard container: a blank means "deduce", and a *trailing* deduced argument is already deduced by
+simply not writing it, so blanks only ever need to reach as far as the last argument you fix.
 
 ### The `$` wrapper (opt-in)
 
@@ -349,7 +349,7 @@ only ever reaches the lift.
 That is as far as `$` reaches into the type world, and the boundary is the language's rather than a
 choice: `$` is a function, so `$<std::map>::anything` is ill-formed — a qualified name cannot refer
 into a specialization of a function template. `$<F>` yields values. Naming a *type* still wants
-`hole`/`bind`/`apply`/`rebind`, or `decltype` around a `make`.
+`blank`/`bind`/`apply`/`rebind`, or `decltype` around a `make`.
 
 It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
 `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift` and
@@ -359,7 +359,7 @@ It is gated because `$` is not an identifier in standard C++ — a GCC/Clang ext
 
 Pain. Avoided for now.
 
-There *is* a working type-level surface — `_::hole<>` with `of`/`as`, `_::rebind`, the noun
+There *is* a working type-level surface — `_::blank<>` with `of`/`as`, `_::rebind`, the noun
 projections, `bind`/`apply` — and `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typeproject.cpp`
 and `tests/typeapply.cpp` show what it does. But the notation never came out pleasant, for reasons
 that turned out to be language rules rather than taste: a name is one *kind* of entity per scope, so

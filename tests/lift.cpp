@@ -1,4 +1,4 @@
-// The closed cells: `tacit::lift` (term) and `tacit::hole` (type), plus the `$` spellings of both.
+// The closed cells: `tacit::lift` (term) and `tacit::blank` (type), plus the `$` spellings of both.
 // The governing rule for the lift is `lift(x).f(a...) == _.f(a...)(normalize(x))` — the closed cell is
 // the open one applied now, over the same vocabulary and the same three dispatch kinds.
 #include <tacit/_.hpp>
@@ -16,36 +16,36 @@ using tacit::lift;
 int main() {
   // ---- the type world: two duals of one template ----
   {
-    static_assert(std::is_same_v<tacit::hole<int>::of<std::vector>, std::vector<int>>);
-    static_assert(std::is_same_v<tacit::hole<int, char>::of<std::map>, std::map<int, char>>);
-    static_assert(std::is_same_v<tacit::hole<>::as<std::vector>::with<int>, std::vector<int>>);
-    static_assert(std::is_same_v<tacit::hole<>::as<std::map>::with<int, char>, std::map<int, char>>);
+    static_assert(std::is_same_v<tacit::blank<int>::of<std::vector>, std::vector<int>>);
+    static_assert(std::is_same_v<tacit::blank<int, char>::of<std::map>, std::map<int, char>>);
+    static_assert(std::is_same_v<tacit::blank<>::as<std::vector>::with<int>, std::vector<int>>);
+    static_assert(std::is_same_v<tacit::blank<>::as<std::map>::with<int, char>, std::map<int, char>>);
     // `of` fixes the arguments and awaits the template; `as` fixes the template and awaits the
     // arguments — the same construction from either side
-    static_assert(std::is_same_v<tacit::hole<int>::of<std::vector>,
-                                 tacit::hole<>::as<std::vector>::with<int>>);
+    static_assert(std::is_same_v<tacit::blank<int>::of<std::vector>,
+                                 tacit::blank<>::as<std::vector>::with<int>>);
     // plain types and plain templates throughout: nothing quoted, nothing lifted
-    static_assert(std::is_same_v<tacit::hole<std::string>::of<std::vector>,
+    static_assert(std::is_same_v<tacit::blank<std::string>::of<std::vector>,
                                  std::vector<std::string>>);
     // and the whole surface is reachable through `_` itself — `_::` looks past the variable to the
     // class, the same route the nouns take. No `$`, no macro, no `struct` crutch.
-    static_assert(std::is_same_v<_::hole<int>::of<std::vector>, std::vector<int>>);
-    static_assert(std::is_same_v<_::hole<>::as<std::map>::with<int, char>, std::map<int, char>>);
-    static_assert(std::is_same_v<_::hole<int>::of<std::vector>,
-                                 _::hole<>::as<std::vector>::with<int>>);
+    static_assert(std::is_same_v<_::blank<int>::of<std::vector>, std::vector<int>>);
+    static_assert(std::is_same_v<_::blank<>::as<std::map>::with<int, char>, std::map<int, char>>);
+    static_assert(std::is_same_v<_::blank<int>::of<std::vector>,
+                                 _::blank<>::as<std::vector>::with<int>>);
     // alongside the pre-existing type-level surface, on the same symbol
     static_assert(std::is_same_v<_::value_type::of<std::vector<int>>, int>);
-    // a hole among the arguments, with no `struct` crutch: `decltype(_)` is the placeholder's own
-    // type, and `_::hole<>` the same thing spelled through the class
-    static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
+    // a blank among the arguments, with no `struct` crutch: `decltype(_)` is the placeholder's own
+    // type, and `_::blank<>` the same thing spelled through the class
+    static_assert(std::is_same_v<tacit::bind<std::vector, _::blank<>>::with<int>,
                                  std::vector<int>>);
-    static_assert(std::is_same_v<tacit::bind<std::map, int, _::hole<>>::with<char>,
+    static_assert(std::is_same_v<tacit::bind<std::map, int, _::blank<>>::with<char>,
                                  std::map<int, char>>);
-    static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
+    static_assert(std::is_same_v<tacit::bind<std::vector, _::blank<>>::with<int>,
                                  std::vector<int>>);
-    static_assert(std::is_same_v<tacit::apply<tacit::quote<std::map>, _::hole<>, int>::with<char>,
+    static_assert(std::is_same_v<tacit::apply<tacit::quote<std::map>, _::blank<>, int>::with<char>,
                                  std::map<char, int>>);
-    static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>,
+    static_assert(std::is_same_v<tacit::bind<std::vector, _::blank<>>::with<int>,
                                  std::vector<int>>);   // the older spelling still works
   }
 

@@ -3,7 +3,7 @@
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
 opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote`; the free-function combinators are
-gated behind `TACIT_COMBINATORS`, and the natural-spelling std holes behind `TACIT_STD_HOLES`.
+gated behind `TACIT_COMBINATORS`, and the natural-spelling std blanks behind `TACIT_STD_BLANKS`.
 Everything here is either already in `<tacit/_.hpp>` or a candidate for it.
 
 ## Composition (implemented)
@@ -87,12 +87,12 @@ would make them ADL-reachable like `|` and moot the gate).
 **If it ever comes to two symbols.** The gate above is *expression interdiction* via the preprocessor —
 we forbid a symbol at the macro level rather than spend a name. If the design ever genuinely wants a
 *second* first-class name (not just a hidden helper), the alternative is to spend a real sigil rather
-than another macro: `$`, a natural twin to `_`, as a *generalized bind* — a value+type-level hole like
+than another macro: `$`, a natural twin to `_`, as a *generalized bind* — a value+type-level blank like
 `_`, unifying binding under one visible symbol instead of the qualified `tacit::bind`.
 
-The clean justification for the glyph is the *zero-hole* framing: define `$`-as-bind so the no-hole
-case degenerates to `$(f, x) == f(x)` — exactly Haskell's `$` (application) — and each positional hole
-is then one step away from `$` toward a section. So Haskell's `$` is the zero-hole special case; you're
+The clean justification for the glyph is the *zero-blank* framing: define `$`-as-bind so the no-blank
+case degenerates to `$(f, x) == f(x)` — exactly Haskell's `$` (application) — and each positional blank
+is then one step away from `$` toward a section. So Haskell's `$` is the zero-blank special case; you're
 generalizing application to leave gaps, not borrowing the glyph by coincidence. Three caveats keep it
 honest. (1) The mechanism can't transfer: in C++, `$` is only ever an *identifier* (a GCC/Clang
 extension, rejected under `-pedantic`), never an operator — the overloadable-operator set is fixed and
@@ -101,7 +101,7 @@ glyph, not the mechanism, and that portability cost is exactly why the early `$`
 (commit `f1e25db`). (2) The literal Haskell-`$` analog already exists as `_`'s application form —
 `_(3)` is the `($ 3)` section, `_()` invokes a thunk — so a `$` symbol would really be doing
 sections/bind (currying / `flip` / `.` territory), a different job wearing `$`'s coat. (3) Least
-astonishment: a Haskeller reading C++ `$` expects apply-glue and would find bind-with-holes, so it
+astonishment: a Haskeller reading C++ `$` expects apply-glue and would find bind-with-blanks, so it
 shouldn't be sold as "C++'s `$`". Net: parked, not adopted — a live option for the "two symbols" world,
 priced in portability, to weigh against staying macro-gated at one.
 
@@ -156,7 +156,7 @@ compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
   init-list commas are separators and untouched. Overloading `operator,` is normally a footgun, so this
   was added only after confirming the full suite (folds over tuples, `std::apply`, etc.) still passes.
 - **Comma is n-ary now, and reaches projections (implemented).** The binary-only version had two
-  holes, both silent. `fn` carried no `operator,` at all, so `(_.size(), _.front())` fell to the
+  blanks, both silent. `fn` carried no `operator,` at all, so `(_.size(), _.front())` fell to the
   *built-in* comma: the left operand evaluated and vanished, leaving just the right — caught only by
   `[[nodiscard]]`, and only as a warning. And `_, _, _` parses `((_, _), _)`, where the two-blank
   form returned a plain lambda that no further `,` could grow, so it built a closure of the wrong
@@ -337,14 +337,14 @@ types — `bind<std::map, int, struct _>::with<double>` == `std::map<int, double
 generalize substitution to alias templates / non-type params via `std::meta::substitute` (gated hook).
 
 **Type-level: one primitive that curries both grains** *(implemented)* — `bind<F, args...>` fixes the
-class template `F` and holes among its *arguments*; it cannot hole the template itself. `apply` closes
+class template `F` and blanks among its *arguments*; it cannot blank the template itself. `apply` closes
 that gap with a single op. Quote a template into a type — `quote<F>` — so it can occupy a slot next to
 ordinary type args, then `apply<Slots...>::with<Fills...>` fills each `struct _` slot (template *or*
 argument) left to right:
 
     apply<quote<std::map>, struct _, struct _>::with<int, char>   // std::map<int,char>  (fix template)
     apply<struct _, int, char>::with<quote<std::map>>             // std::map<int,char>  (fix args)
-    apply<struct _, int, struct _>::with<quote<std::map>, char>   // std::map<int,char>  (hole both)
+    apply<struct _, int, struct _>::with<quote<std::map>, char>   // std::map<int,char>  (blank both)
 
 So `bind<F, A...>::with<X...>` is exactly `apply<quote<F>, A...>::with<X...>` — `bind` is the
 template-pinned special case, kept as the ergonomic spelling; `apply` is the general fallback and the
@@ -353,13 +353,13 @@ packs impose (a template can't sit in a type slot unquoted); a C++26 reflection 
 templates and types both become `std::meta::info` and the slot list stops needing the wrapper. Naming
 (`apply` / `quote`) is provisional — the mechanism is what's settled, not the spelling.
 
-**Type-level: natural spelling via std holes** *(implemented, gated `TACIT_STD_HOLES`, experimental)* —
+**Type-level: natural spelling via std blanks** *(implemented, gated `TACIT_STD_BLANKS`, experimental)* —
 the sugar tier: `std::map<struct _, int>::with<char>` reading as itself, no `quote`/`apply` ceremony.
 It works by injecting partial specializations of common containers (`vector`, `set`, `map`, `pair`,
-`tuple`) into `namespace std`, each keyed on the hole type and exposing a `::with<...>`. Four facts,
+`tuple`) into `namespace std`, each keyed on the blank type and exposing a `::with<...>`. Four facts,
 all verified on g++-13 / clang-18, fix its exact shape and are why it's off by default:
 
-- *The hole must be elaborated.* A template argument names the value `_` first, so a bare `_` is a
+- *The blank must be elaborated.* A template argument names the value `_` first, so a bare `_` is a
   non-type argument where a type is wanted; the specializations key on `struct ::tacit::_` (and callers
   write `std::map<struct _, int>`), the same tag-namespace trick `bind` already leans on.
 - *Explicit arity, not a trailing pack.* A trailing `...` is not "more specialized" than a fixed-arity
@@ -367,31 +367,31 @@ all verified on g++-13 / clang-18, fix its exact shape and are why it's off by d
   SHAPE macro (`SPEC_1_1` / `SPEC_1_2` / `SPEC_2_2`) that names them. One macro per (fillable, trailing)
   shape plus a short table; medium curation weight.
 - *Reconstruct fresh defaults.* `map<struct _, T, C, A>::with<K>` yields `map<K, T>`, **not**
-  `map<K, T, C, A>` — carrying the hole-derived `less<hole>` / `allocator<…hole…>` along silently
+  `map<K, T, C, A>` — carrying the blank-derived `less<blank>` / `allocator<…blank…>` along silently
   poisons the result (`is_same` fails). The price: you can't thread an explicit non-default
-  Compare/Allocator through a hole; drop to `apply`/`bind` for that.
-- *Variadic templates take one leading hole, portably.* `tuple<struct _, R...>` is legal at any arity,
-  but interior holes (`tuple<int, struct _, char>`) are ill-formed (pack must be last) and a *second*
-  leading-hole spec makes g++ (not clang) call it ambiguous — so: prefix hole, one at a time.
-- *Value-parameterized containers hole the type, the value rides.* `array` / `span` are `<class,
+  Compare/Allocator through a blank; drop to `apply`/`bind` for that.
+- *Variadic templates take one leading blank, portably.* `tuple<struct _, R...>` is legal at any arity,
+  but interior blanks (`tuple<int, struct _, char>`) are ill-formed (pack must be last) and a *second*
+  leading-blank spec makes g++ (not clang) call it ambiguous — so: prefix blank, one at a time.
+- *Value-parameterized containers blank the type, the value rides.* `array` / `span` are `<class,
   size_t>`; `array<struct _, 5>::with<int>` == `array<int, 5>`, with the extent `5` a plain literal in
   a real template-id — no wrapper, because a non-type template argument is already a first-class thing
   to write. That's the whole reason this stays natural: a *probe* (`value_param_probes.cpp`) confirmed
   every value-parameterized template is also reachable through the general primitive — `<class, auto>`,
   `<auto>`, even `integer_sequence`'s dependent `<class T, T...>` — but only by making the caller pick
   a kind-matched `quote` *and* wrap each value as `val<5>`. Two visible taxes for the general case; the
-  natural type-hole grain pays neither, so it's the only value-param grain shipped. The mirror (holing
-  the *extent*, fixing the type) has no natural spelling — a type hole can't sit in a `size_t` slot —
+  natural type-blank grain pays neither, so it's the only value-param grain shipped. The mirror (holing
+  the *extent*, fixing the type) has no natural spelling — a type blank can't sit in a `size_t` slot —
   and is intentionally absent; reach for a one-line metafunction if you must vary an extent.
 
-The politics: specializing a std class template for a hole type doesn't meet the original's
+The politics: specializing a std class template for a blank type doesn't meet the original's
 requirements, so `[namespace.std]` makes it ill-formed *no diagnostic required* — it compiles and does
 the right thing on tested toolchains, but it's a spelling convenience, not a standards guarantee (the
 `std::hash`-for-your-type precedent covers "specialize for your type," not "specialize into something
 that isn't the thing"). Hence the gate: off by default, `apply`/`bind` is the portable always-on
 surface, and Tier 1 is opt-in for those who want the natural read and accept the caveat.
 
-**Type-level projection** *(implemented)* — the dual of `bind`: where `bind` wraps the hole in an
+**Type-level projection** *(implemented)* — the dual of `bind`: where `bind` wraps the blank in an
 *outer* template, `_::name::of<X>` pulls a nested member *out* of X (`_::value_type::of<vector<int>>`
 == `int`), the type-level twin of the value-level member vocabulary. It works because a name before
 `::` is looked up considering only types, namespaces, and templates ([basic.lookup.qual]), so `_::name`
@@ -417,15 +417,15 @@ nothing in the std table needs the templated form, so it stays opt-in and rarely
 Moved out of the README, which now says only "pain, avoided for now" — the surface works, but the
 notation never became pleasant enough to lead with. What is built and tested:
 
-`_` is a hole in the **term** world, awaiting its subject. Two things sit beside it: a hole in the
+`_` is a blank in the **term** world, awaiting its subject. Two things sit beside it: a blank in the
 **type** world, and a way to hand either world a subject it already has.
 
-`tacit::hole<A...>` is the type-level twin, with two duals — `of` fixes the arguments and awaits the
+`tacit::blank<A...>` is the type-level twin, with two duals — `of` fixes the arguments and awaits the
 template, `as` fixes the template and awaits the arguments:
 
 ```cpp
-hole<int>::of<std::vector>            // std::vector<int>      head is the hole
-hole<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
+blank<int>::of<std::vector>            // std::vector<int>      head is the blank
+blank<>::as<std::map>::with<int, char> // std::map<int, char>   head is given
 ```
 
 Plain types and plain templates throughout — nothing quoted, nothing wrapped.
@@ -443,7 +443,7 @@ really `vector<float, allocator<float>>`, so `rebind<double>` re-defaults the al
 carrying `allocator<float>` across. This is the shape `std::simd`'s `rebind_t` has and that
 [P3971](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2026/p3971r0.html) is standardising.
 
-`bind`/`apply` remain for the arg-hole grain with the hole spelled `_::hole<>`; `as` is the spelling
+`bind`/`apply` remain for the arg-blank grain with the blank spelled `_::blank<>`; `as` is the spelling
 that needs no marker. See `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typeproject.cpp`,
 `tests/typeapply.cpp`.
 
@@ -454,7 +454,7 @@ that needs no marker. See `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typepr
 > **Superseded in part — read this first.** The grid below was the plan; what shipped is narrower and
 > better founded. `$` is a plain **function template in `namespace tacit`**, not an alias template and
 > not a macro, and it is **term-only**: `$(x)` lifts a value, `$<F>(a…)` builds one (`make`). The type
-> world kept its conforming spelling (`hole`/`bind`/`apply`/`rebind`) and never moved onto `$`.
+> world kept its conforming spelling (`blank`/`bind`/`apply`/`rebind`) and never moved onto `$`.
 >
 > The reason is a language rule the plan below did not account for: **`$` is a function, so
 > `$<std::map>::anything` is ill-formed** — a qualified name cannot refer into a specialization of a
@@ -466,14 +466,14 @@ that needs no marker. See `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typepr
 > **What a function template buys instead**, and it is not nothing: function templates are the one
 > construct that can be **overloaded on parameter kind**, which class templates cannot be. So an
 > explicit argument list may mix a *value* `_` with *types* — `$<std::map, _, int>` — if the overloads
-> are enumerated, one per arrangement of holes. That is what makes `make`'s partial CTAD spellable
+> are enumerated, one per arrangement of blanks. That is what makes `make`'s partial CTAD spellable
 > (`make<std::set, _, std::greater<>>(3,1,2)`), and it is the only place in the library where `_` sits
-> among types in a template-argument list. It resolves the "holes among arguments" problem below at
-> *term* level — where a hole can be enumerated cheaply because the result is a value — while the type
+> among types in a template-argument list. It resolves the "blanks among arguments" problem below at
+> *term* level — where a blank can be enumerated cheaply because the result is a value — while the type
 > level, needing a class template, stays walled off exactly as described.
 
 ```
-                open (hole)                     closed (given)
+                open (blank)                     closed (given)
   term          _    _.f()  _ < _  _(x)         $(42).f()
   type          $<int>::of<F>                   $<>::as<F>::with<X>
 ```
@@ -487,33 +487,33 @@ two syntactic slots, and the closest thing to a standalone `$` is `$<>`, which s
 
 `_` stays **macro-free and term-only**: an ordinary variable, so `_ < _`, `_.f()` and the application
 form `_(x)` all survive untouched, along with scoping, shadowing and any local named `_`. The type
-world is `$`, an alias template over the core's `tacit::hole<A...>`; `decltype(_)` is `hole<>`, so the
+world is `$`, an alias template over the core's `tacit::blank<A...>`; `decltype(_)` is `blank<>`, so the
 two worlds are still one template even though they no longer share a spelling. The term lift `$(42)` is
 a **function-like macro**, which coexists with `$<int>` for free — a function-like macro fires only on
 `(`, and `$<int>` has no paren. No probe, no region, no delimiters.
 
 **`_<T>` is given up.** That is the whole cost, and it is a cost in symmetry rather than in practice:
-the head-hole is rarely what you reach for, and everything it expressed is available as `$<T>`. The
+the head-blank is rarely what you reach for, and everything it expressed is available as `$<T>`. The
 grid stays orthogonal in meaning; only the notation stops rhyming.
 
 All four cells are occupied, and the two type cells are **duals of one template**: `of` fixes the
 arguments and awaits the template, `as` fixes the template and awaits the arguments —
 
 ```cpp
-$<int>::of<std::vector>            // std::vector<int>   head is the hole
+$<int>::of<std::vector>            // std::vector<int>   head is the blank
 $<>::as<std::vector>::with<int>    // std::vector<int>   head is given
 static_assert(std::is_same_v<$<int>::of<std::vector>, $<>::as<std::vector>::with<int>>);
 ```
 
 which settles what looked like an open question: today's `bind`/`apply` is not a separate mechanism to
-reconcile with the head-hole — it *is* the closed/type cell, reached through `as`. Both work on plain
+reconcile with the head-blank — it *is* the closed/type cell, reached through `as`. Both work on plain
 types and plain templates, with no `quote<>` and no lifting.
 
 So the whole design is one line: **one template `$<A...>`; `_` is its bare instance at value level
 (`decltype(_)` is `$<>`), `of`/`as` are its two appliers, `$(…)` lifts a plain value.**
 
 Because `$` is an extension identifier, the type world ships as an opt-in `<tacit/$.hpp>` and the core
-must keep a conforming spelling of the same template (`tacit::hole<int>::of<F>`, or a user's own
+must keep a conforming spelling of the same template (`tacit::blank<int>::of<F>`, or a user's own
 `_t` alias) so a `-pedantic` project is never locked out. The `$(…)` macro makes that header
 include-last.
 
@@ -586,7 +586,7 @@ independent walls, any one of them fatal:
 The general shape: `<…>` after a **bare** name always demands that the name be a template, and that is
 the one thing `_` can never be. What survives is `<…>` after a `.` or a `::` — member function
 templates and member class templates *do* take explicit template arguments, which is exactly the route
-`_::hole<int>`, `_::rebind<double>` and `_.of<F>()` already take. That is the open axis; the bare one is
+`_::blank<int>`, `_::rebind<double>` and `_.of<F>()` already take. That is the open axis; the bare one is
 closed for good.
 
 **The clincher**: if `_` were a template, `_ < _` stops parsing — the compiler reads `_<` as a
@@ -647,24 +647,24 @@ collision risk point in opposite directions, and collision is the one that bites
 
 #### One template, two worlds
 
-The type-level blank is `_::hole<>`, and it is the only spelling. `struct _` and `decltype(_)` were
+The type-level blank is `_::blank<>`, and it is the only spelling. `struct _` and `decltype(_)` were
 both discarded: the placeholder's own type is the *term*-level object, and conflating it with the
-type-level hole is what made the old spelling need a `struct` crutch. `bind`/`apply`/`TACIT_STD_HOLES`
-all take `hole<>` now. Watch for silent failure when adding a spelling — an unrecognised hole does not
-error, it quietly becomes a fixed argument (`bind<std::vector, _::hole<>>` compiled and produced
-`std::vector<hole<>>` before the slot-fillers were taught about it).
+type-level blank is what made the old spelling need a `struct` crutch. `bind`/`apply`/`TACIT_STD_BLANKS`
+all take `blank<>` now. Watch for silent failure when adding a spelling — an unrecognised blank does not
+error, it quietly becomes a fixed argument (`bind<std::vector, _::blank<>>` compiled and produced
+`std::vector<blank<>>` before the slot-fillers were taught about it).
 
-Every spelling below is notation over the same core: one ordinary, conforming name — `tacit::hole<A...>`
-(or `blank`) — whose bare specialisation is also the type of the value, so `decltype(_)` *is* `hole<>`.
+Every spelling below is notation over the same core: one ordinary, conforming name — `tacit::blank<A...>`
+(or `blank`) — whose bare specialisation is also the type of the value, so `decltype(_)` *is* `blank<>`.
 Users who want a short alias write one line of their own:
 
 ```cpp
-template <class... A> using __ = tacit::hole<A...>;   // or _t, or Ty, or whatever
+template <class... A> using __ = tacit::blank<A...>;   // or _t, or Ty, or whatever
 ```
 
 Verified transparent: trait matching, partial specialisations written in the alias spelling, and
-deduction through it all see `hole`. `using __ = tacit::hole<>;` is *not* enough — a plain alias gives
-only the bare hole, and `__<int>` then fails; it must be the alias-template form.
+deduction through it all see `blank`. `using __ = tacit::blank<>;` is *not* enough — a plain alias gives
+only the bare blank, and `__<int>` then fails; it must be the alias-template form.
 
 That the alias is the user's own line is the point: the library never declares a reserved or
 non-conforming identifier, so the core stays strictly conforming and the gamble, where there is one, is
@@ -681,7 +681,7 @@ They **can** put a call-shaped name beside a template-shaped one, since a functi
 on `(`:
 
 ```cpp
-template <class... A> using $ = tacit::hole<A...>;   // $<int>, $<>
+template <class... A> using $ = tacit::blank<A...>;   // $<int>, $<>
 #define $(...) tacit::lift(__VA_ARGS__)              // $(42)
 ```
 
@@ -693,8 +693,8 @@ included **last**, a genuine ordering constraint unlike the order-independent na
 The same trick puts the *whole grid* on `_`, and it is fully conforming, but it forks the surface:
 
 ```cpp
-template <class... A> using _ = tacit::hole<A...>;
-#define _(...) tacit::hole<>{} __VA_OPT__(.apply(__VA_ARGS__))
+template <class... A> using _ = tacit::blank<A...>;
+#define _(...) tacit::blank<>{} __VA_OPT__(.apply(__VA_ARGS__))
 //  _<>  _<int>  types        _()  _(3)  terms
 ```
 
@@ -716,13 +716,13 @@ What it does buy, all verified:
   needs no probe at all.
 - **Token pasting eats a leading token.** `a##__VA_ARGS__` joins with the *first* token of the argument,
   so a macro can consume a leading `_` and leave the rest intact:
-  `_T(_<int>::of<std::vector>)` → `tacit::hole<int>::of<std::vector>`. `CAT` must be variadic, since
+  `_T(_<int>::of<std::vector>)` → `tacit::blank<int>::of<std::vector>`. `CAT` must be variadic, since
   `<int, char>` contains commas the preprocessor treats as argument separators. Limits: only the
-  *leading* `_` is replaced, so nested holes (`_T(_<_<int>>)`) fail, and input not starting with `_`
+  *leading* `_` is replaced, so nested blanks (`_T(_<_<int>>)`) fail, and input not starting with `_`
   produces a garbage identifier. Scanning arbitrary token soup for every `_` is not something the
   preprocessor can do — Boost.PP rewrites only *enumerated* structures (sequences, tuples).
 - **Paren-probe dispatch**, if one macro must serve both worlds:
-  `_(int)` → `hole<int>`, `_((3))` → the application form, chosen by `IS_PAREN` on the first argument.
+  `_(int)` → `blank<int>`, `_((3))` → the application form, chosen by `IS_PAREN` on the first argument.
   Verified working end to end. Not needed under the decision above, since `$<…>` and `$(…)` already
   differ by bracket.
 
@@ -736,12 +736,12 @@ Two subtleties cost real time and are easy to hit again:
   `BOOST_PP_IS_BEGIN_PARENS` takes its argument directly.
 
 All of this dissolves under C++26 reflection: `^^int` is a *value*, so a single `template <auto...>`
-hole accepts `hole<^^int>` and `hole<3>` alike — one template, no probe, no marker parens, no macro.
+blank accepts `blank<^^int>` and `blank<3>` alike — one template, no probe, no marker parens, no macro.
 The preprocessor work here is the C++23 stand-in for that.
 
-#### Holes among arguments: why the kind wall bites here too, and what to do instead
+#### Blanks among arguments: why the kind wall bites here too, and what to do instead
 
-The type-level hole cannot be the *value* `_`, for the same reason the term-level one cannot be a
+The type-level blank cannot be the *value* `_`, for the same reason the term-level one cannot be a
 template — but the failure lands one level earlier than expected, and it is worth being precise:
 
 - **Class templates cannot be overloaded at all.** Two primaries with the same name is
@@ -752,27 +752,27 @@ template — but the failure lands one level earlier than expected, and it is wo
   `template <class T, auto... V> struct B` accepts `B<int, _>`, and
   `template <class T, auto... R> struct B<T, _, R...>` matches it while `B<int, 42>` takes the
   primary. The specialization machinery is entirely capable — it is never the obstacle.
-- **But positions are kind-locked.** `B<int, _, char>` and `B<_, int>` both fail, because a hole may
+- **But positions are kind-locked.** `B<int, _, char>` and `B<_, int>` both fail, because a blank may
   appear at *any* position and the arguments around it are types. `bind<map, int, _>` and
   `bind<map, _, int>` need opposite layouts from one template. So the error from `bind<vector, _>` is
   not "no specialization matched" — argument resolution fails before any specialization is consulted.
 - **Chaining does reach it**, since each step is its own template with its own kinds:
   `builder<std::map>::a<int>::v<_>::with<char>` works, value `_` and all. Set aside because it puts a
-  marker on *every* position to buy a hole at one.
+  marker on *every* position to buy a blank at one.
 
 **And when the arguments are all values, do not enumerate — compute.** Pinning `_` positionally by
-partial specialization works (`sub<1, _, 3>` selects the hole-at-1 pattern) but costs 2^n patterns:
-the last hole at position n needs every subset of the n slots before it, so 63 specializations only
-reaches arity 5. It also goes *ambiguous* — `sub<_, _>` matches both the hole-at-0 and hole-at-1
+partial specialization works (`sub<1, _, 3>` selects the blank-at-1 pattern) but costs 2^n patterns:
+the last blank at position n needs every subset of the n slots before it, so 63 specializations only
+reaches arity 5. It also goes *ambiguous* — `sub<_, _>` matches both the blank-at-0 and blank-at-1
 patterns until the `<_, _, R...>` combination is written out too. All of that evaporates by folding
 over the pack instead:
 
 ```cpp
 template <auto... A> struct pattern {
-  static constexpr std::array<bool, sizeof...(A)> hole{is_hole_v<A>...};
-  static constexpr std::size_t holes = (0 + ... + (is_hole_v<A> ? 1 : 0));
+  static constexpr std::array<bool, sizeof...(A)> blank{is_hole_v<A>...};
+  static constexpr std::size_t blanks = (0 + ... + (is_hole_v<A> ? 1 : 0));
 };
-pattern<_, 1, _, 2, _, 3, _, 4, _>::holes == 5    // any arity, any combination, no macro
+pattern<_, 1, _, 2, _, 3, _, 4, _>::blanks == 5    // any arity, any combination, no macro
 ```
 
 One primary, no specializations, no ambiguity, no bound — and it is the same algorithm
@@ -805,7 +805,7 @@ error: template parameter has a different kind in template redeclaration
 
 So a class `$` cannot take a template-template argument (`$<std::map>` is a hard error — `std::map` is
 not a type) and therefore loses `$<std::map>(…)`, `$<std::map, _, int>(…)`, and mixed value/type lists
-— i.e. all of `make`, partial CTAD included. The trade is: **a class buys `::`, which `hole`/`bind`
+— i.e. all of `make`, partial CTAD included. The trade is: **a class buys `::`, which `blank`/`bind`
 already spell conformingly; a function buys kind-overloading, which nothing else in the language does.**
 Since `make` is the only genuinely new capability `$` unlocks, the function keeps it.
 
@@ -836,15 +836,15 @@ would not, which is precisely the ambiguity `make<F>(a…)` inherits from writin
   consistent with the existing `_::name::of<X>` noun grammar; costs four characters of `::t`. The
   runner-up, and the safe choice if the region delimiters prove annoying in practice.
 - **Bounded type region** (`#include <tacit/types_begin.hpp>` … `types_end.hpp`, with `_` `#define`d to
-  the hole inside) — the only design that kept *both* `_ < _` and `_<int>`, fully conforming, with no
+  the blank inside) — the only design that kept *both* `_ < _` and `_<int>`, fully conforming, with no
   macro at term level. Set aside because per-region `#include` delimiters are too heavy for something as
   ordinary as writing a type, and a forgotten close leaks the macro into everything downstream.
   `#pragma push_macro`/`pop_macro` nests if it is ever revisited.
 - **The crossing** (`_` for types, `$` for terms) — compiles, and both crossed spellings work: `_()` and
-  `_{}` are usable term holes, and `$<>` works if `$` is a variable *template* (which then costs bare
+  `_{}` are usable term blanks, and `$<>` works if `$` is a variable *template* (which then costs bare
   `$`). Rejected because it inverts the priority — the clean native spelling goes to the rarer world and
   the constant one pays, either with `$` (making the **core** non-conforming, not a quarantined header)
-  or with `_()` at every use. Worth keeping in the back pocket: `_()`/`_{}` being valid term holes means
+  or with `_()` at every use. Worth keeping in the back pocket: `_()`/`_{}` being valid term blanks means
   that if `_` ever must become a template, the term world degrades rather than vanishes.
 
 ### The placeholder is always `_` (decision)

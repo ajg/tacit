@@ -23,7 +23,7 @@
 #     adventure. Run the clang leg locally and let CI cover g++-13.
 #
 # The drift is not pure loss: a newer libc++ than CI's is how you find out that the opt-in
-# TACIT_STD_HOLES block trips libc++ 21's `no_specializations` marking on `std::tuple` — real,
+# TACIT_STD_BLANKS block trips libc++ 21's `no_specializations` marking on `std::tuple` — real,
 # documented-as-ill-formed behaviour that CI's clang 18 is too old to diagnose.
 #
 # AND ONE THING YOU CANNOT HAVE BOTH OF, on aarch64-darwin only. The `import tacit;` leg needs clang

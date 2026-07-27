@@ -50,6 +50,6 @@ static_assert(std::is_same_v<_::tag::of<Widget>, int>);
 static_assert(std::is_same_v<_::rebound<char>::of<Widget>::type, char *>);
 
 // projection coexists with bind, both reached through `_`
-static_assert(std::is_same_v<tacit::bind<std::vector, _::hole<>>::with<int>, std::vector<int>>);
+static_assert(std::is_same_v<tacit::bind<std::vector, _::blank<>>::with<int>, std::vector<int>>);
 
 int main() { return 0; }

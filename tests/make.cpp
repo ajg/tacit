@@ -1,5 +1,5 @@
 // `make<F, ...>(args...)` — the closed cell that BUILDS a value, where `lift` adopts one. The rule
-// is CTAD plus holes: `_` in the template-argument list means "deduce this position", anything else
+// is CTAD plus blanks: `_` in the template-argument list means "deduce this position", anything else
 // is fixed. That combination — deduce some arguments, fix others — is what stock C++ has no spelling
 // for, and it is the whole reason this exists.
 #include <tacit/_.hpp>
@@ -57,7 +57,7 @@ int main() {
     static_assert(std::is_same_v<decltype(m), std::map<int, std::string, std::greater<>>>);
     assert(m.begin()->first == 2);
 
-    // a hole in the middle: fix the mapped type, deduce the key
+    // a blank in the middle: fix the mapped type, deduce the key
     auto m2 = make<std::map, _, long>(std::pair{1, 2L});
     static_assert(std::is_same_v<decltype(m2), std::map<int, long>>);
 
@@ -70,7 +70,7 @@ int main() {
     assert(u.at(1) == 'a');
   }
 
-  // ---- holes with nothing fixed are just CTAD, and trailing parameters re-default ----
+  // ---- blanks with nothing fixed are just CTAD, and trailing parameters re-default ----
   {
     static_assert(std::is_same_v<decltype(make<std::vector, _>(1, 2, 3)), std::vector<int>>);
     // the allocator is not mentioned, so it re-defaults for the DEDUCED element, not carried over
