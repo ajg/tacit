@@ -12,9 +12,9 @@ whatever they're later applied to — so you can hand operations to algorithms w
 #include <tacit/_.hpp>
 using tacit::_;
 
-std::sort(nums, _ < _);
-std::count_if(nums, _ == 0);
-std::transform(words, out, _.size());
+std::ranges::sort(nums, _ < _);
+std::ranges::count_if(nums, _ == 0);
+std::ranges::transform(words, out, _.size());
 ```
 
 `_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
@@ -105,7 +105,7 @@ There is a type-level table too — see *Type level*, below.
 The comparison, arithmetic, bitwise, shift, and logical operators are finite and lexical: `_ == y`,
 `x + _`, `_ + _` all build the obvious closure (a one-sided form is unary; `_ op _` is a two-input
 combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `-_`, `!_`, `~_`,
-`*_` (deref), `++_` — as does streaming (`os << _`, so `for_each(v, std::cout << _)`) and member access
+`*_` (deref), `++_` — as does streaming (`os << _`, so `ranges::for_each(v, std::cout << _)`) and member access
 through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
 
 **Comparisons chain.** C++ parses `0 < _ < 10` as `(0 < _) < 10` — a *bool* compared against 10, so
@@ -126,7 +126,7 @@ negated predicate. The flip side of the rule is that a comparison *of* a compari
 `_ < _` is unaffected: with two blanks it's the two-input comparator, not a link.
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
-bind the argument by reference, so `for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an
+bind the argument by reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an
 ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives in
 `tacit::compose`, not in `|`.
 
@@ -181,8 +181,8 @@ The closure `_` hands back is itself composable, so a projection and a section c
 naming a lambda — sections, subscript (`_[i]`), and arithmetic all build a new closure:
 
 ```cpp
-std::count_if(v, _.size() >= 2);        // size(x) >= 2
-std::sort(v, _.size() < _.size());      // order by size
+std::ranges::count_if(v, _.size() >= 2);        // size(x) >= 2
+std::ranges::sort(v, _.size() < _.size());      // order by size
 
 auto scaled = (_ + 1) * 2;         // x -> (x + 1) * 2
 auto head   = _[0];                // x -> x[0]
@@ -222,7 +222,7 @@ _(3)(std::negate{}); // -> -3
 // or:
 
 std::vector<std::function<void()>> thunks{};
-std::for_each(thunks, _()); // invoke each thunk
+std::ranges::for_each(thunks, _()); // invoke each thunk
 ```
 
 ## The term wrapper
@@ -381,8 +381,8 @@ include, and each name becomes first-class on the same `_`:
 using tacit::_;
 
 _.make_deposit(_)(account, 100);        // blanks work here too
-std::sort(accounts, {}, _.balance());   // now first-class on _
-std::count_if(accounts, _.is_frozen()); // also on projections and _->
+std::ranges::sort(accounts, {}, _.balance());   // now first-class on _
+std::ranges::count_if(accounts, _.is_frozen()); // also on projections and _->
 ```
 
 Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a hard
