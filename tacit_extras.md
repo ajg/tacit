@@ -563,6 +563,20 @@ independent walls, any one of them fatal:
    not `_<int>(x)` (`expected unqualified-id`), not `_::_<int>(x)` (`qualified reference to '_' is a
    constructor name rather than a type`). They are always deduced from the arguments. So a constructor
    template gives `_(x)`, never `_<int>`.
+
+   Worth being exact, because the declaration itself is perfectly legal and looks promising:
+
+   ```cpp
+   struct _ {
+     template <auto...> constexpr _() {}     // compiles fine — and is unreachable
+   } inline constexpr _;
+   ```
+
+   That *does* compile. What compiles is the **struct-hack** (a class-head name beside a variable of
+   the same name), which the library already relies on; the constructor template rides along without
+   objecting. But every way of supplying its arguments is rejected — `_<1>`, `_<1>{}`, `_<1>()`,
+   `decltype(_)::_<1>()` — and since the pack is non-deducible it is only ever deduced *empty*. So the
+   declaration is not a foothold: it is a default constructor with unreachable parameters.
 2. Even granting (1), `_<int>` requires `_` to *name a template* at the point of parse, which is the
    redefinition in row 1 of the table.
 3. Even granting (1) and (2), the variable `_` **hides** the class in expression contexts, so `_(42)`

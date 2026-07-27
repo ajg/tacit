@@ -76,6 +76,28 @@ project or test with: diagnostics (`what`, `code`, `message`), `filesystem::path
 (`subspan`, `size_bytes`). Names cost nothing until used — each is a member template, so a wider
 table is a longer declaration list, not a bigger binary.
 
+**Tuple-like projection** is the one vocabulary name whose argument is a *template* argument, so it
+gets its own spelling — by index or by type, either of which composes like any other verb:
+
+```cpp
+_.get<0>()                              // x -> std::get<0>(x)
+_.get<std::string>()                    // by type
+_.get<1>().size()                       // composes onward
+std::ranges::sort(v, {}, _.get<0>());   // sort a vector of tuples by their first element
+std::ranges::count_if(v, _.get<0>() > 1)
+```
+
+It reaches the free `get<…>(x)` first — which is the real route for `tuple`, `pair`, `array`,
+`variant` and `subrange`, none of which have a member `get` — and falls back to a member `get<…>()`
+for types that spell it that way. The plain `_.get()` (`shared_ptr`, `unique_ptr`, `future`) is
+untouched: the two overload rather than collide.
+
+This is also the only place `<…>` is reachable from `_` at all. A template-argument list after a
+*bare* name demands that the name be a template, which `_` can never be — but after a `.` it binds to
+a member function template, so `_.get<0>()` is legal where `_<0>` is not. Both `<0>` and `<int>` fit
+under one name because member function templates, unlike class templates, can be overloaded on
+parameter kind.
+
 There is a type-level table too — see *Type level*, below.
 
 ### Operator sections

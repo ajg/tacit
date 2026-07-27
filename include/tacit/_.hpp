@@ -294,6 +294,39 @@ template <std::size_t N> struct fixed_string {
 template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
 #endif
 
+// `get` dispatch, for `_.get<0>()` / `_.get<int>()`. Tuple-like access is the one std vocabulary name
+// that is spelled with a TEMPLATE argument, so it cannot ride the ordinary member table — and it is the
+// one place `<…>` is reachable at all, since a template argument list after a `.` binds to a member
+// function template rather than demanding that the name before it be a template.
+//
+// Two dispatch routes, in this order:
+//   1. the free `get<…>(x)`, via the two-step (`using std::get;` + unqualified call) — this is the real
+//      route for `tuple`, `pair`, `array`, `variant`, `ranges::subrange` and any user type with an ADL
+//      `get`, none of which have a member `get` at all;
+//   2. the member `x.template get<…>()`, for types that spell it that way instead.
+//
+// Index and type forms are separate overloads because a template parameter list is single-kind: `<0>`
+// is a value and `<int>` is a type. Function templates — including member function templates — are the
+// one construct that can be overloaded on parameter kind, which is what lets both live under `get`.
+template <std::size_t I, class X> [[nodiscard]] constexpr decltype(auto) get_(X &&x) {
+  using std::get;
+  if constexpr (requires { get<I>(static_cast<X &&>(x)); })
+    return get<I>(static_cast<X &&>(x));
+  else
+    return static_cast<X &&>(x).template get<I>();
+}
+template <class T, class X> [[nodiscard]] constexpr decltype(auto) get_(X &&x) {
+  using std::get;
+  if constexpr (requires { get<T>(static_cast<X &&>(x)); })
+    return get<T>(static_cast<X &&>(x));
+  else
+    return static_cast<X &&>(x).template get<T>();
+}
+template <std::size_t I, class X>
+concept has_get_at = requires(X &&x) { tacit::detail::get_<I>(static_cast<X &&>(x)); };
+template <class T, class X>
+concept has_get_type = requires(X &&x) { tacit::detail::get_<T>(static_cast<X &&>(x)); };
+
 } // namespace detail
 
 // clang-format off
@@ -558,18 +591,29 @@ template <std::size_t N> fixed_string(char const (&)[N]) -> fixed_string<N>;
         return std::invoke(std::forward<decltype(x)>(x), ys..., std::forward<decltype(zs)>(zs)...);\
       };                                                                                           \
   }                                                                                                \
-  template <class... Ts>                                                                           \
-  [[nodiscard]] static constexpr auto get_types() {                                                \
-    return [](auto&& x) -> decltype(auto) {                                                        \
-      return std::forward<decltype(x)>(x).template get<Ts...>();                                   \
-    };                                                                                             \
+  /* `_.get<0>()` and `_.get<int>()` — tuple-like projection. Overloaded on parameter KIND, so the    \
+     index and type forms share the name; both return an `fn`, so they compose like any other verb    \
+     (`_.get<0>().size()`, `sort(v, {}, _.get<1>())`). The plain `_.get()` from the member table is    \
+     untouched: its template parameter is a *type* pack bound to function arguments, so `<0>` is not   \
+     a valid explicit argument for it and `<int>` leaves it wanting a call argument that is not        \
+     there — neither form is viable, and no ambiguity arises. */                                      \
+  template <std::size_t I>                                                                          \
+  [[nodiscard]] static constexpr auto get() {                                                       \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
+             requires tacit::detail::has_get_at<I, X>                                               \
+             { return tacit::detail::get_<I>(std::forward<X>(x)); }};                               \
   }                                                                                                \
-  template <int I>                                                                                 \
-  [[nodiscard]] static constexpr auto get_at() {                                                   \
-    return [](auto&& x) -> decltype(auto) {                                                        \
-      return std::forward<decltype(x)>(x).template get<I>();                                       \
-    };                                                                                             \
+  template <class T>                                                                                \
+  [[nodiscard]] static constexpr auto get() {                                                       \
+    return tacit::detail::fn{[]<class X>(X&& x) -> decltype(auto)                                   \
+             requires tacit::detail::has_get_type<T, X>                                             \
+             { return tacit::detail::get_<T>(std::forward<X>(x)); }};                               \
   }                                                                                                \
+  /* the older spellings, kept as aliases so they gain the free-function route and compose too */    \
+  template <class... Ts>                                                                            \
+  [[nodiscard]] static constexpr auto get_types() { return self::template get<Ts...>(); }           \
+  template <std::size_t I>                                                                          \
+  [[nodiscard]] static constexpr auto get_at() { return self::template get<I>(); }                  \
   template <class I>                                                                               \
   [[nodiscard]] constexpr auto operator[](I&& i) const {                                           \
     if constexpr (tacit::detail::is_slot_v<I>) /* `_[_]` == (x, i) -> x[i] */                      \
@@ -1361,6 +1405,22 @@ template <class T> struct held {
 #undef TACIT_HELD_MEMBER
 #undef TACIT_HELD_CPO1
 #undef TACIT_HELD_FREE1
+  // `$(t).get<0>()` — the lift's half of the tuple-like projection, so the rule `$(x).f(a…)` ==
+  // `_.f(a…)(x)` holds for the one verb whose argument is a template argument. Non-static and
+  // `const`, matching the member table, so these overload with the plain `get` rather than clashing
+  // with it (a static and a non-static member function of the same name and parameter list cannot
+  // coexist).
+  template <std::size_t I>
+    requires has_get_at<I, T const &>
+  [[nodiscard]] constexpr decltype(auto) get() const {
+    return tacit::detail::get_<I>(v);
+  }
+  template <class U>
+    requires has_get_type<U, T const &>
+  [[nodiscard]] constexpr decltype(auto) get() const {
+    return tacit::detail::get_<U>(v);
+  }
+
   // `$(p)->size()` — the arrow surface of the lift, for the case a value has no useful members of
   // its own: a smart pointer, an iterator, an optional-ish handle. It mirrors `_->size()` exactly,
   // reaching the pointee through the *real* `operator->` and calling plain members there (no CPO
