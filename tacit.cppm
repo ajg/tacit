@@ -24,14 +24,14 @@ using tacit::apply;
 using tacit::bind;
 using tacit::quote;
 #ifdef TACIT_COMBINATORS
+using tacit::all_of_element;
+using tacit::any_of_element;
 using tacit::compose;
 using tacit::fanout;
 using tacit::first;
-using tacit::second;
 using tacit::for_each_element;
-using tacit::any_of_element;
-using tacit::all_of_element;
 using tacit::none_of_element;
+using tacit::second;
 using tacit::transform_elements;
 #endif
 } // namespace tacit

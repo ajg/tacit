@@ -15,8 +15,14 @@ using tacit::_;
 struct probe {
   int v;
   static inline int cmps = 0;
-  friend bool operator<(int a, probe const& b) { ++cmps; return a < b.v; }
-  friend bool operator<(probe const& b, int a) { ++cmps; return b.v < a; }
+  friend bool operator<(int a, probe const &b) {
+    ++cmps;
+    return a < b.v;
+  }
+  friend bool operator<(probe const &b, int a) {
+    ++cmps;
+    return b.v < a;
+  }
 };
 
 int main() {
@@ -24,7 +30,7 @@ int main() {
   {
     auto in_range = 0 < _ < 10;
     assert(!in_range(-1));
-    assert(!in_range(0));   // strict on both sides
+    assert(!in_range(0)); // strict on both sides
     assert(in_range(1));
     assert(in_range(9));
     assert(!in_range(10));
@@ -37,13 +43,13 @@ int main() {
   {
     assert((0 <= _ <= 10)(0) && (0 <= _ <= 10)(10) && !(0 <= _ <= 10)(11));
     assert((0 < _ <= 10)(10) && !(0 < _ <= 10)(0));
-    assert((10 > _ > 0)(5) && !(10 > _ > 0)(0));  // descending reads the same way
+    assert((10 > _ > 0)(5) && !(10 > _ > 0)(0)); // descending reads the same way
     assert((0 != _ != 7)(3) && !(0 != _ != 7)(7) && !(0 != _ != 7)(0));
   }
 
   // ---- chains of any length ----
   {
-    auto c = 0 < _ < 10 < 20;  // (0 < x) && (x < 10) && (10 < 20)
+    auto c = 0 < _ < 10 < 20; // (0 < x) && (x < 10) && (10 < 20)
     assert(c(5) && !c(50));
     auto d = 0 <= _ < 100 <= 100;
     assert(d(7) && !d(-1));
@@ -59,7 +65,7 @@ int main() {
     std::vector<std::string> words{"", "a", "bb", "ccc", "dddd", "eeeee"};
     assert(std::ranges::count_if(words, 1u <= _.size() < 4u) == 3);
 
-    auto first_in_range = 0 < _[0] < 10;  // subscript projection chains too
+    auto first_in_range = 0 < _[0] < 10; // subscript projection chains too
     std::vector<int> row{5};
     assert(first_in_range(row));
     row[0] = 50;
@@ -71,7 +77,7 @@ int main() {
     auto in_range = 0 < _ < 10;
     probe::cmps = 0;
     assert(!in_range(probe{-1}));
-    assert(probe::cmps == 1);  // `0 < x` failed; `x < 10` never ran
+    assert(probe::cmps == 1); // `0 < x` failed; `x < 10` never ran
     probe::cmps = 0;
     assert(in_range(probe{5}));
     assert(probe::cmps == 2);
@@ -83,7 +89,7 @@ int main() {
     assert((10 > _)(5));
     assert((_ == 3)(3) && (_ != 3)(4));
     assert((_.size() < 3u)(std::string("ab")));
-    assert((_ < _)(1, 2));                    // two-blank stays a two-INPUT comparator
+    assert((_ < _)(1, 2)); // two-blank stays a two-INPUT comparator
     assert(!(_ < _)(2, 1));
     assert((_.size() < _.size())(std::string("a"), std::string("bb")));
     std::vector<int> v{3, 1, 2};
@@ -95,7 +101,7 @@ int main() {
   {
     // `(0 < _) + 0` is arithmetic on the bool, so the `< 2` that follows compares that bool
     auto broken = (0 < _) + 0 < 2;
-    assert(broken(5) && broken(-5));  // 0/1 is always < 2 — a plain fn, no chain state
+    assert(broken(5) && broken(-5)); // 0/1 is always < 2 — a plain fn, no chain state
     // negation likewise drops the chain
     auto n = !(_ < 10);
     assert(n(20) && !n(5));

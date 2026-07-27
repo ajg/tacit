@@ -27,13 +27,11 @@ static_assert(std::is_same_v<_::second_type::of<std::pair<int, char>>, char>);
 static_assert(std::is_same_v<_::allocator_type::of<std::vector<int>>, std::allocator<int>>);
 
 // chaining is just nesting `of` — vector<vector<char>> -> vector<char> -> char
-static_assert(
-    std::is_same_v<_::value_type::of<_::value_type::of<std::vector<std::vector<char>>>>, char>);
+static_assert(std::is_same_v<_::value_type::of<_::value_type::of<std::vector<std::vector<char>>>>, char>);
 
 // a projection is a first-class type: hand it to a higher-order metafunction
 template <class L, class Proj> struct map_proj;
-template <template <class...> class L, class... Xs, class Proj>
-struct map_proj<L<Xs...>, Proj> {
+template <template <class...> class L, class... Xs, class Proj> struct map_proj<L<Xs...>, Proj> {
   using type = L<typename Proj::template of<Xs>...>;
 };
 template <class...> struct list {};
@@ -44,7 +42,9 @@ static_assert(std::is_same_v<map_proj<list<std::vector<int>, std::map<char, bool
 // projection, both first-class on the same `_`
 struct Widget {
   using tag = int;
-  template <class U> struct rebound { using type = U *; };
+  template <class U> struct rebound {
+    using type = U *;
+  };
 };
 static_assert(std::is_same_v<_::tag::of<Widget>, int>);
 static_assert(std::is_same_v<_::rebound<char>::of<Widget>::type, char *>);

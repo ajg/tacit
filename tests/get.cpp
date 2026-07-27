@@ -23,7 +23,8 @@
 using tacit::_;
 
 // a type that spells `get` as a MEMBER rather than a free function — the second dispatch route
-template <class T> concept member_get = requires(T t) { t.template get<0>(); };
+template <class T>
+concept member_get = requires(T t) { t.template get<0>(); };
 
 struct Pt {
   int x, y;
@@ -37,7 +38,7 @@ int main() {
     assert(_.get<0>()(t) == 1);
     assert(_.get<1>()(t) == "ab");
     assert(_.get<2>()(t) == 2.5);
-    assert(_.get<std::string>()(t) == "ab");   // by type, since it appears exactly once
+    assert(_.get<std::string>()(t) == "ab"); // by type, since it appears exactly once
     std::pair p{7, 'z'};
     assert(_.get<0>()(p) == 7);
     assert(_.get<1>()(p) == 'z');
@@ -52,7 +53,7 @@ int main() {
   {
     static_assert(!member_get<std::tuple<int>>);
     static_assert(member_get<Pt>);
-    assert(_.get<0>()(Pt{3, 4}) == 3);   // ...but a member `get` is used when that is how it is spelled
+    assert(_.get<0>()(Pt{3, 4}) == 3); // ...but a member `get` is used when that is how it is spelled
     assert(_.get<1>()(Pt{3, 4}) == 4);
   }
 
@@ -70,7 +71,7 @@ int main() {
     std::ranges::sort(v, {}, _.get<0>());
     assert(std::get<0>(v[0]) == 1 && std::get<0>(v[2]) == 3);
     assert(std::ranges::count_if(v, _.get<0>() > 1) == 2);
-    std::ranges::sort(v, _ > _, _.get<1>());   // by the string, descending
+    std::ranges::sort(v, _ > _, _.get<1>()); // by the string, descending
     assert(std::get<1>(v[0]) == "c");
 
     std::map<int, std::string> m{{1, "x"}, {2, "y"}};

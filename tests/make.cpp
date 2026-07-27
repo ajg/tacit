@@ -49,11 +49,10 @@ int main() {
     // re-type, and the one plain CTAD would have got right
     auto s = make<std::set, _, std::greater<>>(3, 1, 2);
     static_assert(std::is_same_v<decltype(s), std::set<int, std::greater<>>>);
-    assert(*s.begin() == 3);   // greater<>, so the largest sorts first
+    assert(*s.begin() == 3); // greater<>, so the largest sorts first
 
     // deduce both key and mapped type, fix only the comparator
-    auto m = make<std::map, _, _, std::greater<>>(std::pair{1, std::string("a")},
-                                                  std::pair{2, std::string("b")});
+    auto m = make<std::map, _, _, std::greater<>>(std::pair{1, std::string("a")}, std::pair{2, std::string("b")});
     static_assert(std::is_same_v<decltype(m), std::map<int, std::string, std::greater<>>>);
     assert(m.begin()->first == 2);
 
@@ -64,9 +63,8 @@ int main() {
     // depth 4 — unordered_map's <Key, T, Hash, KeyEqual> deduced ahead of a fixed allocator
     using alloc = std::allocator<std::pair<const int, char>>;
     auto u = make<std::unordered_map, _, _, _, _, alloc>(std::pair{1, 'a'});
-    static_assert(std::is_same_v<decltype(u),
-                                 std::unordered_map<int, char, std::hash<int>,
-                                                    std::equal_to<int>, alloc>>);
+    static_assert(
+        std::is_same_v<decltype(u), std::unordered_map<int, char, std::hash<int>, std::equal_to<int>, alloc>>);
     assert(u.at(1) == 'a');
   }
 
@@ -74,8 +72,7 @@ int main() {
   {
     static_assert(std::is_same_v<decltype(make<std::vector, _>(1, 2, 3)), std::vector<int>>);
     // the allocator is not mentioned, so it re-defaults for the DEDUCED element, not carried over
-    static_assert(std::is_same_v<decltype(make<std::vector, _>(1, 2, 3)),
-                                 std::vector<int, std::allocator<int>>>);
+    static_assert(std::is_same_v<decltype(make<std::vector, _>(1, 2, 3)), std::vector<int, std::allocator<int>>>);
     // NOT reachable: `std::array` is a <class, size_t> shape, and `make`'s parameter is
     // `template <class...> class F`. Nothing is lost — an array has one type argument and a deduced
     // extent, so there is no second argument to fix and partial CTAD has nothing to say. Plain CTAD
@@ -88,11 +85,11 @@ int main() {
   // ---- the result is the value itself, not a lift of it ----
   {
     auto v = make<std::vector>(1, 2, 3);
-    static_assert(std::is_same_v<decltype(v), std::vector<int>>);   // a real vector, hand it anywhere
-    v.push_back(4);                                                 // its own members, not the vocabulary
+    static_assert(std::is_same_v<decltype(v), std::vector<int>>); // a real vector, hand it anywhere
+    v.push_back(4);                                               // its own members, not the vocabulary
     assert(v.size() == 4);
-    assert(std::ranges::count_if(v, _ > 2) == 2);                   // and it feeds the open cell
-    assert(tacit::lift(make<std::vector>(1, 2, 3)).size() == 3);    // wrap it if you want the vocabulary
+    assert(std::ranges::count_if(v, _ > 2) == 2);                // and it feeds the open cell
+    assert(tacit::lift(make<std::vector>(1, 2, 3)).size() == 3); // wrap it if you want the vocabulary
   }
 
   // ---- it composes with the type-level surface, through decltype ----

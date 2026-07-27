@@ -12,8 +12,8 @@ struct account {
   money_type balance() const { return cents; }
 };
 // free function and CPO-ish: an `account` has no members for these
-inline int risk(account const& a) { return a.cents < 0 ? 2 : 0; }
-inline int tier(account const& a) { return a.cents >= 1000 ? 1 : 0; }
+inline int risk(account const &a) { return a.cents < 0 ? 2 : 0; }
+inline int tier(account const &a) { return a.cents >= 1000 ? 1 : 0; }
 } // namespace bank
 
 #define TACIT_VOCABULARY "vocab/bank_vocabulary.hpp"
@@ -48,8 +48,8 @@ int main() {
   assert(std::ranges::count_if(v, _.tier() == 1) == 1);
   assert(std::ranges::count_if(v, _.risk() > 0) == 1);
   assert(std::ranges::count_if(v, _.balance() > 50) == 2);
-  assert(tacit::lift(v[1]).balance() == 5000);      // the lift surface
-  assert(tacit::lift(v[1]).tier() == 1);            // ...including the free/CPO entries
+  assert(tacit::lift(v[1]).balance() == 5000); // the lift surface
+  assert(tacit::lift(v[1]).tier() == 1);       // ...including the free/CPO entries
 
   // and composes like any other vocabulary
   assert((_.balance() + 1)(a) == 1251);

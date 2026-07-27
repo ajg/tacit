@@ -18,8 +18,8 @@ int main() {
   std::ranges::sort(v, {}, _.area()); // _.area() is now first-class on the default _
   assert(v[0].area() == 1);
   assert(_.perimeter()(Box{1, 1}) == 4.0);
-  assert(_.size()(v) == 3);           // std vocabulary still intact
+  assert(_.size()(v) == 3); // std vocabulary still intact
   Box b{4, 4};
-  assert(_->area()(&b) == 16.0);      // the same verb reaches the arrow proxy (_->area())
+  assert(_->area()(&b) == 16.0); // the same verb reaches the arrow proxy (_->area())
   return 0;
 }

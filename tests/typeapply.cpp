@@ -20,17 +20,14 @@ using tacit::quote;
 
 // ---- Tier 2: the unified primitive, both grains ---------------------------------------------------
 // fix the template, vary the args:
-static_assert(std::is_same_v<apply<quote<std::map>, _::blank<>, _::blank<>>::with<int, char>,
-                             std::map<int, char>>);
+static_assert(std::is_same_v<apply<quote<std::map>, _::blank<>, _::blank<>>::with<int, char>, std::map<int, char>>);
 static_assert(std::is_same_v<apply<quote<std::map>, int, _::blank<>>::with<char>, std::map<int, char>>);
 static_assert(std::is_same_v<apply<quote<std::vector>, _::blank<>>::with<int>, std::vector<int>>);
 // fix the args, vary the template (the grain plain `bind` cannot spell):
 static_assert(std::is_same_v<apply<_::blank<>, int, char>::with<quote<std::map>>, std::map<int, char>>);
-static_assert(
-    std::is_same_v<apply<_::blank<>, _::blank<>>::with<quote<std::vector>, int>, std::vector<int>>);
+static_assert(std::is_same_v<apply<_::blank<>, _::blank<>>::with<quote<std::vector>, int>, std::vector<int>>);
 // blank in both grains at once:
-static_assert(std::is_same_v<apply<_::blank<>, int, _::blank<>>::with<quote<std::map>, char>,
-                             std::map<int, char>>);
+static_assert(std::is_same_v<apply<_::blank<>, int, _::blank<>>::with<quote<std::map>, char>, std::map<int, char>>);
 // apply subsumes bind: same result, template pinned via quote:
 static_assert(std::is_same_v<apply<quote<std::map>, _::blank<>, _::blank<>>::with<char, int>,
                              bind<std::map, _::blank<>, _::blank<>>::with<char, int>>);
@@ -45,8 +42,7 @@ static_assert(std::is_same_v<std::pair<int, _::blank<>>::with<char>, std::pair<i
 static_assert(std::is_same_v<std::pair<_::blank<>, _::blank<>>::with<char, int>, std::pair<char, int>>);
 static_assert(std::is_same_v<std::set<_::blank<>>::with<int>, std::set<int>>);
 // tuple: leading blank, any arity:
-static_assert(
-    std::is_same_v<std::tuple<_::blank<>, int, char>::with<double>, std::tuple<double, int, char>>);
+static_assert(std::is_same_v<std::tuple<_::blank<>, int, char>::with<double>, std::tuple<double, int, char>>);
 // value-parameterized: blank the element type, the extent (an NTTP) rides along as a literal:
 static_assert(std::is_same_v<std::array<_::blank<>, 5>::with<int>, std::array<int, 5>>);
 static_assert(std::is_same_v<std::span<_::blank<>, 4>::with<int>, std::span<int, 4>>);

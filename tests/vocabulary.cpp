@@ -152,24 +152,20 @@ int main() {
   // ---- type-level: the noun table ----
   {
     static_assert(std::is_same_v<_::rep::of<std::chrono::seconds>,
-                                 std::chrono::seconds::rep>);  // rep is long on LP64, long long elsewhere
+                                 std::chrono::seconds::rep>); // rep is long on LP64, long long elsewhere
     static_assert(std::is_same_v<_::period::of<std::chrono::seconds>, std::ratio<1>>);
     static_assert(std::is_same_v<_::container_type::of<std::stack<int>>, std::deque<int>>);
-    static_assert(std::is_same_v<_::deleter_type::of<std::unique_ptr<int>>,
-                                 std::default_delete<int>>);
+    static_assert(std::is_same_v<_::deleter_type::of<std::unique_ptr<int>>, std::default_delete<int>>);
     static_assert(std::is_same_v<_::weak_type::of<std::shared_ptr<int>>, std::weak_ptr<int>>);
     static_assert(std::is_same_v<_::hasher::of<std::unordered_map<int, int>>, std::hash<int>>);
-    static_assert(std::is_same_v<_::key_equal::of<std::unordered_map<int, int>>,
-                                 std::equal_to<int>>);
-    static_assert(std::is_same_v<_::iterator_category::of<std::vector<int>::iterator>,
-                                 std::random_access_iterator_tag>);
+    static_assert(std::is_same_v<_::key_equal::of<std::unordered_map<int, int>>, std::equal_to<int>>);
+    static_assert(
+        std::is_same_v<_::iterator_category::of<std::vector<int>::iterator>, std::random_access_iterator_tag>);
     static_assert(std::is_same_v<_::string_type::of<std::filesystem::path>, std::string>);
     static_assert(std::is_same_v<_::pos_type::of<std::char_traits<char>>, std::streampos>);
-    static_assert(std::is_same_v<_::node_type::of<std::map<int, int>>,
-                                 std::map<int, int>::node_type>);
+    static_assert(std::is_same_v<_::node_type::of<std::map<int, int>>, std::map<int, int>::node_type>);
     static_assert(std::is_same_v<_::id::of<std::thread>, std::thread::id>);
-    static_assert(std::is_same_v<_::clock::of<std::chrono::steady_clock::time_point>,
-                                 std::chrono::steady_clock>);
+    static_assert(std::is_same_v<_::clock::of<std::chrono::steady_clock::time_point>, std::chrono::steady_clock>);
   }
 
   return 0;

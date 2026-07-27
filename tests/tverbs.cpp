@@ -49,10 +49,10 @@ int main() {
 #if TACIT_HAS_RANGES_TO
   {
     auto r = std::views::iota(1, 4);
-    auto v = _.to<std::vector>()(r);              // template argument, element deduced
+    auto v = _.to<std::vector>()(r); // template argument, element deduced
     static_assert(std::is_same_v<decltype(v), std::vector<int>>);
     assert(v.size() == 3 && v[2] == 3);
-    auto w = _.to<std::vector<long>>()(r);        // type argument, spelled out
+    auto w = _.to<std::vector<long>>()(r); // type argument, spelled out
     static_assert(std::is_same_v<decltype(w), std::vector<long>>);
     // from a projection
     std::vector<std::vector<int>> vv{{1, 2, 3}};
@@ -78,7 +78,7 @@ int main() {
     assert(std::ranges::count_if(v, _.first > 1) == 2);
     assert(_.first(std::pair{7, 'z'}) == 7);
     assert(_.second(std::pair{7, 'z'}) == 'z');
-    assert(_.second.size()(v[0]) == 1);           // composes onward like any other verb
+    assert(_.second.size()(v[0]) == 1); // composes onward like any other verb
     std::map<int, std::string> m{{1, "x"}, {2, "yy"}};
     assert(std::ranges::count_if(m, _.second.size() == 2u) == 1);
   }

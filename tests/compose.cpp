@@ -23,8 +23,7 @@ int main() {
   // subscript, and subscript-then-section
   assert(_[0](std::vector<int>{9, 8, 7}) == 9);
   auto first_pos = _[0] > 0; // x -> x[0] > 0
-  assert(first_pos(std::vector<int>{5, -1}) &&
-         !first_pos(std::vector<int>{-5, 1}));
+  assert(first_pos(std::vector<int>{5, -1}) && !first_pos(std::vector<int>{-5, 1}));
 
   // fn < fn -> a projected binary comparator, usable by ranges::sort
   std::vector<std::string> v{"ccc", "a", "bb"};
