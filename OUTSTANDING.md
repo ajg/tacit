@@ -17,9 +17,13 @@ OUTSTANDING
    collide with the field-style names, and the runtime `_.subspan(o, n)` already covers it);
    `variant::emplace<T>(a...)` (would be ambiguous with the existing runtime `emplace`).
 
-4. We can keep combinators in named form (compose, fanout, fanin, first, second, dup) in a sub-namespace, and make the prefered usage through sigil operators;
-   some useful ones: like `&&&`, `***`, `+++`, `---`, `-->`, `++>`, `<++`, `<--`, `<<-`, `>>-`, `>>+`, `<<+`, `<<*`, `>>*`; one anomaly is the real operator `->.*`,
-   because it could serve as compose, unless `->.*` as itself is actually useful. Then either we include the synthetic operators by default or make them a simple using away.   
+4. ~~Synthetic sigil operators.~~ **DONE (opt-in: `TACIT_COMBINATORIAL_OPERATORS`)** — `->*` compose
+   left-to-right, `<<*` compose right-to-left, `&&&` fanout, `***` product. Exhaustive sweep in
+   `tacit_extras.md`: 7194 candidates, 615 stolen by maximal munch, 368 of the 391 practical ones
+   compile. Haskell's `&&&`/`***`/`+++` survive C++'s lexer; `|||`/`>>>`/`<<<` do not, which is why
+   compose is `->*` (a real, single, unclaimed operator). `->.*` is not a token sequence at all —
+   `->` needs an id-expression after it. The named forms (compose/fanout/first/second) already exist
+   behind `TACIT_COMBINATORS`; moving them to a sub-namespace is still open.
 
 5. README. **Namespaces fixed** — every range-taking algorithm is now `std::ranges::`; the headline
    example did not compile before. Still outstanding: inferred std types to cut noise, and documenting

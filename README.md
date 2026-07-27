@@ -386,6 +386,43 @@ It is gated because `$` is not an identifier in standard C++ — a GCC/Clang ext
 `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift` and
 `tacit::make`; nothing is `$`-only, and a default build never sees it.
 
+## Synthetic sigils (opt-in)
+
+`#define TACIT_COMBINATORIAL_OPERATORS` before including:
+
+```cpp
+f ->* g     // compose, left to right   x -> g(f(x))
+f <<* g     // compose, right to left   x -> f(g(x))
+f &&& g     // fanout                   x -> {f(x), g(x)}
+f *** g     // product                  (a, b) -> {f(a), g(b)}   (or one pair in)
+
+(_.size() &&& _.front())(std::string("abc"))     // {3, 'a'}
+std::ranges::sort(v, {}, (_.size()) ->* (_ * 2));
+```
+
+C++'s overloadable-operator set is closed, so none of these is an operator. Each is a **token
+sequence** the lexer splits, by maximal munch, into operators that already exist: `f &&& g` is binary
+`&&` applied to `f` and unary `&` applied to `g`. One glyph to a reader, two operators to the
+compiler.
+
+Which spellings survive that is not a matter of taste. Of 7194 candidate sequences, 615 are stolen by
+maximal munch — `a + + b` is not `+` twice, it is `++` — and of the 391 practical ones, 368 compile.
+Haskell's `&&&`, `***` and `+++` survive; `|||`, `>>>` and `<<<` do not (`>>>` lexes as `>>` `>`, and
+`> g` is not an expression). That's why composition is `->*`: a real, single, overloadable operator
+nothing else claimed. The full sweep is in `tacit_extras.md`.
+
+**What it costs.** Both halves are already spoken for — `f && g` is the logical-and section, `&g` the
+address-of section — so a sigil can only be carved out of what those mean. Under the gate, unary `&`
+and `*` on a closure return a type that *derives* from `fn`, so `(&_)(c) == &c` and `(*_) + 1` are
+unchanged and every section still finds it. Exactly one reading is given up: `f && (&g)`,
+logical-and against an address-of closure. That's the whole price, and it's why this is gated.
+
+**Precedence is inherited, and bites twice.** A sigil has none of its own: it takes the binary half's
+on the left, while the unary half grabs only the primary expression on its right. `->*` sits just
+below postfix, so both operands usually want parentheses — `_ + 1 ->* _ * 2` parses as
+`_ + (1 ->* _) * 2`. `&&&` sits near the bottom, so its left operand needs none, but `f &&& _ * 2` is
+still `f && ((&_) * 2)`; write `f &&& (_ * 2)`.
+
 ## Type level
 
 Pain. Avoided for now.

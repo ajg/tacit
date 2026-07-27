@@ -780,6 +780,65 @@ One primary, no specializations, no ambiguity, no bound — and it is the same a
 `pick`), so the value-pack version shares a shape with what is there rather than inventing a second
 one. This is the foundation `$1`/`$2` should be built on.
 
+### Synthetic sigils: the exhaustive sweep (implemented, opt-in)
+
+C++'s overloadable-operator set is closed, so a "new operator" can only ever be a **token sequence**
+the lexer splits, by maximal munch, into operators that already exist. `f &&& g` is binary `&&`
+applied to `f` and unary `&` applied to `g` — one glyph to a reader, two operators to the compiler.
+
+**The sweep.** Every sequence of the form `[postfix-unary]? binary [prefix-unary]*` was generated
+over the full punctuator set, run through an exact maximal-munch tokenizer, and then compile-tested:
+
+| | |
+| --- | --- |
+| generated (postfix × binary × prefix, ≤2 prefixes) | 7194 |
+| lex as intended | 6579 |
+| **stolen by maximal munch** | **615** |
+| of the practical subset (391 lex-valid) — **compile** | **368** |
+
+The 615 are the interesting failures: the sigil *cannot* mean what it looks like because a longer
+token eats its prefix. `a + + b` is not `+` twice, it is `++`; `a + & & b` is not `+`,`&`,`&`, it is
+`+`,`&&`. Maximal munch is not negotiable, so those spellings are unavailable at any price.
+
+**Against Haskell's arrow vocabulary**, which is the canonical naming for exactly these combinators:
+
+| spelling | in C++ | why |
+| --- | --- | --- |
+| `&&&` fanout | **available** | `&&` + unary `&` |
+| `***` product | **available** | `*` + unary `*` + unary `*` |
+| `+++` sum | **available** | postfix `++` + `+` |
+| `\|\|\|` fanin | unavailable | lexes `\|\|` `\|`, and `\| g` is not an expression |
+| `>>>` compose | unavailable | lexes `>>` `>`, and `> g` is not an expression |
+| `<<<` compose | unavailable | lexes `<<` `<`, same reason |
+
+That `>>>` is unavailable is why composition here is spelled **`->*`** — a real, single, overloadable
+operator that nothing else in the library claimed.
+
+**What shipped** (behind `TACIT_COMBINATORIAL_OPERATORS`): `->*` compose left-to-right, `<<*` compose
+right-to-left, `&&&` fanout, `***` product.
+
+**The mechanism, and its one cost.** Both halves of every sigil are already spoken for: `f && g` is
+the logical-and section and `&g` is the address-of section. So a sigil cannot be *added* to the
+surface — it can only be carved out of what those already mean. Under the gate, unary `&` and `*` on
+a closure return a `marked` type that **derives from `fn`** and additionally carries the un-addressed
+operand. Deriving is what makes it free: `(&_)(c) == &c` and `(*_) + 1` are bit-for-bit unchanged,
+every section still finds it through its base, and `is_fn_v<marked>` is specialised to `true` so the
+`not_fn` constraints throughout the header keep treating it as the closure it is (which is also what
+breaks the overload ambiguity — without it the ordinary `fn op value` sections claim a marked right
+operand as a bound value and the candidates tie).
+
+The single reading given up is `f && (&g)` — logical-and against an address-of closure. Nobody writes
+it. That is why this is affordable, and why it is nonetheless gated.
+
+**Precedence is inherited, and it bites twice.** A sigil has no precedence of its own — it takes the
+binary half's on the left, and the *unary* half grabs only the primary expression on its right:
+
+- `->*` sits just below postfix, so **both** operands usually want parentheses: `_ + 1 ->* _ * 2`
+  parses as `_ + (1 ->* _) * 2`.
+- `&&&` sits near the bottom, so the left operand needs none — but `f &&& _ * 2` is still
+  `f && ((&_) * 2)`, because unary `&` binds tighter than `*`. Right operands past a single postfix
+  expression want parentheses: `f &&& (_ * 2)`.
+
 #### `$` as a class rather than a function (explored; rejected)
 
 A class would buy back the one thing the function cannot have — **a scope**. `$<int>::of<F>` works for

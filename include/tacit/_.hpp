@@ -156,8 +156,23 @@ struct nochain {};
 // comparator), not a projected blank, which only a one-fill closure can be.
 struct nary {};
 template <class> constexpr bool is_fn_v = false;
+#ifdef TACIT_COMBINATORIAL_OPERATORS
+// The synthetic-sigil markers (see "SYNTHETIC SIGILS" below, after `fn` is complete — `marked`
+// derives from it). Declared here because the unary sections above build them.
+struct amp_tag;
+struct star_tag;
+template <class Tag, class F, class G> struct marked;
+template <class Tag, class G, class F> [[nodiscard]] constexpr auto mark(G inner, F f);
+#endif
 template <class, class = nochain> struct fn;
 template <class F, class L> constexpr bool is_fn_v<fn<F, L>> = true;
+#ifdef TACIT_COMBINATORIAL_OPERATORS
+// A marked closure IS an `fn` — it derives from one — so every `not_fn` constraint in the header
+// must see it that way. Saying so is also what keeps the sigil overloads unambiguous: without it the
+// ordinary `fn op value` sections claim a marked right operand as a plain bound value, and the two
+// candidates tie.
+template <class Tag, class F, class G> constexpr bool is_fn_v<marked<Tag, F, G>> = true;
+#endif
 template <class> constexpr bool is_nary_v = false;
 template <class F> constexpr bool is_nary_v<fn<F, nary>> = true;
 template <class T>
@@ -486,11 +501,26 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
 //  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
 //  differ by arity. `&_` builds `x -> &x`, not the placeholder's address (use std::addressof if ever
 //  needed); overloading unary `&` is the one to keep in mind.
-#define TACIT_UNARY(op)                                                                                                \
+//  How a unary section wraps its lambda. Plain by default; under TACIT_COMBINATORIAL_OPERATORS the
+//  `&` and `*` forms produce a TAGGED closure instead — one that still IS an `fn` (it derives), so
+//  `(&_)(c) == &c` and `(*_) + 1` are unchanged, but which the synthetic sigils can dispatch on.
+#define TACIT_PLAIN(L) tacit::detail::fn{L}
+#define TACIT_MARK_INNER tacit_mark_inner_
+#ifdef TACIT_COMBINATORIAL_OPERATORS
+#define TACIT_MARK_AMP(L) tacit::detail::mark<tacit::detail::amp_tag>(TACIT_MARK_INNER, L)
+#define TACIT_MARK_STAR(L) tacit::detail::mark<tacit::detail::star_tag>(TACIT_MARK_INNER, L)
+#else
+#define TACIT_MARK_AMP(L) TACIT_PLAIN(L)
+#define TACIT_MARK_STAR(L) TACIT_PLAIN(L)
+#endif
+#define TACIT_UNARY_AS(op, WRAP)                                                                                       \
   [[nodiscard]] friend constexpr auto operator op(self) {                                                              \
-    return tacit::detail::fn{[](auto&& x) -> decltype(auto)                                                            \
-             { return op std::forward<decltype(x)>(x); }};                                                             \
+    [[maybe_unused]] auto tacit_mark_inner_ =                                                                           \
+        tacit::detail::fn{[](auto&& x) -> decltype(auto) { return std::forward<decltype(x)>(x); }};                    \
+    return WRAP([](auto&& x) -> decltype(auto)                                                                         \
+             { return op std::forward<decltype(x)>(x); });                                                             \
   }
+#define TACIT_UNARY(op) TACIT_UNARY_AS(op, TACIT_PLAIN)
 //  Postfix form (the trailing int disambiguates), for ++ / --.
 #define TACIT_UNARY_POST(op)                                                                                           \
   [[nodiscard]] friend constexpr auto operator op(self, int) {                                                         \
@@ -568,7 +598,8 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
   TACIT_COMPARE(<=) TACIT_COMPARE(>=) TACIT_SECTION(+) TACIT_SECTION(-)                                                \
   TACIT_SECTION(*) TACIT_SECTION(/) TACIT_SECTION(%) TACIT_SECTION(^)                                                  \
   TACIT_SECTION(&) TACIT_SECTION(|) TACIT_SECTION(&&) TACIT_SECTION(||) TACIT_SECTION(<<) TACIT_SECTION(>>)            \
-  TACIT_UNARY(*) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~) TACIT_UNARY(&)                            \
+  TACIT_UNARY_AS(*, TACIT_MARK_STAR) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~)                 \
+  TACIT_UNARY_AS(&, TACIT_MARK_AMP)                            \
   TACIT_UNARY(++) TACIT_UNARY(--) TACIT_UNARY_POST(++) TACIT_UNARY_POST(--)                                            \
   TACIT_ASSIGN(+=) TACIT_ASSIGN(-=) TACIT_ASSIGN(*=) TACIT_ASSIGN(/=) TACIT_ASSIGN(%=)                                 \
   TACIT_ASSIGN(^=) TACIT_ASSIGN(&=) TACIT_ASSIGN(|=) TACIT_ASSIGN(<<=) TACIT_ASSIGN(>>=)                               \
@@ -960,17 +991,19 @@ template <class F, class Last> struct fn {
     return tacit::detail::make_comma(g, h);
   }
   // Unary operators compose through the projection: `op g` == x -> op g(x).
-#define TACIT_FN_UNARY(op)                                                                                             \
+#define TACIT_FN_UNARY_AS(op, WRAP)                                                                                    \
   [[nodiscard]] friend constexpr auto operator op(fn g) {                                                              \
-    return tacit::detail::fn{                                                                                          \
-        [g](auto &&...x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)...); }};                         \
+    [[maybe_unused]] auto tacit_mark_inner_ = g;                                                                        \
+    return WRAP([g](auto &&...x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)...); });                 \
   }
+#define TACIT_FN_UNARY(op) TACIT_FN_UNARY_AS(op, TACIT_PLAIN)
 #define TACIT_FN_UNARY_POST(op)                                                                                        \
   [[nodiscard]] friend constexpr auto operator op(fn g, int) {                                                         \
     return tacit::detail::fn{                                                                                          \
         [g](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op; }};                         \
   }
-  TACIT_FN_UNARY(*) TACIT_FN_UNARY(-) TACIT_FN_UNARY(+) TACIT_FN_UNARY(!) TACIT_FN_UNARY(~) TACIT_FN_UNARY(&)
+  TACIT_FN_UNARY_AS(*, TACIT_MARK_STAR) TACIT_FN_UNARY(-) TACIT_FN_UNARY(+) TACIT_FN_UNARY(!)
+  TACIT_FN_UNARY(~) TACIT_FN_UNARY_AS(&, TACIT_MARK_AMP)
   TACIT_FN_UNARY(++) TACIT_FN_UNARY(--) TACIT_FN_UNARY_POST(++) TACIT_FN_UNARY_POST(--)
 #undef TACIT_FN_UNARY
 #undef TACIT_FN_UNARY_POST
@@ -1089,6 +1122,107 @@ template <class F, class Last> struct fn {
 // `fn{f}` is an unchained projection; `fn{f, last}` a comparison section. Spelled out (rather than left to aggregate
 // deduction) so the one-argument form unambiguously picks up the `nochain` default.
 template <class F> fn(F) -> fn<F, nochain>;
+
+// ------------------------------------------------------------------------------------------------
+// SYNTHETIC SIGILS (opt-in: `#define TACIT_COMBINATORIAL_OPERATORS`).
+//
+//     f ->* g      compose, left to right   x -> g(f(x))
+//     f <<* g      compose, right to left   x -> f(g(x))
+//     f &&& g      fanout                   x -> {f(x), g(x)}
+//     f *** g      product                  (a, b) -> {f(a), g(b)}   (or one pair in)
+//
+// C++ has a closed set of overloadable operators and no way to add to it, so none of these is an
+// operator. Each is a TOKEN SEQUENCE that the lexer splits, by maximal munch, into operators that do
+// exist — `f &&& g` is binary `&&` applied to `f` and unary `&` applied to `g`. The sigil is one
+// glyph to a reader and two operators to the compiler, and that is the whole trick.
+//
+// The catch is that both halves are already spoken for: `f && g` is the logical-and section and `&g`
+// is the address-of section. So a sigil cannot be *added* to the surface; it can only be carved out
+// of what those two already mean. `marked` is how: under the gate, unary `&` and `*` on a closure
+// return a type that DERIVES from `fn`, so every existing use is bit-for-bit unchanged — it calls
+// the same way, composes the same way, and the operator sections still find it through its base —
+// while carrying a tag the sigil overloads can dispatch on.
+//
+// What it costs is exactly one reading: `f && (&g)`, logical-and against an address-of closure, now
+// means fanout. Nothing else moves. That expression is not one anybody writes, which is why this is
+// affordable at all — but it is a real trade, and it is why the whole thing is gated.
+//
+// The exhaustive sweep behind the choice of these four is in tacit_extras.md: of 391 lexically valid
+// two- and three-operator sigils, 368 compile. Haskell's arrow spellings `&&&`, `***` and `+++`
+// survive C++'s lexer; `|||`, `>>>` and `<<<` do not (`>>>` lexes as `>>` `>`, and `> g` is not an
+// expression), which is why composition here is `->*` — a real, single, and until now unclaimed
+// operator — rather than the arrow spelling.
+#ifdef TACIT_COMBINATORIAL_OPERATORS
+struct amp_tag {};   // from unary `&` — the fanout half of `&&&`
+struct star_tag {};  // from unary `*` — the compose half of `<<*`
+struct star2_tag {}; // from `**`      — the product half of `***`
+
+// A marked closure IS an `fn` (public base, no members of its own), so it inherits the call
+// operator, the vocabulary and every hidden-friend section; only its TYPE differs.
+// A marked closure IS an `fn` — it derives from one, and that base is the ORIGINAL meaning of the
+// unary operator (`&g` still computes `x -> &g(x)`), so nothing existing shifts. Alongside it the
+// marker keeps `inner`: the operand the sigil actually wants, un-addressed and un-dereferenced.
+// Both are needed, because `f &&& g` must read `g` as itself while `(&g)(x)` must still take an
+// address.
+template <class Tag, class F, class G> struct marked : fn<F, nochain> {
+  [[no_unique_address]] G inner;
+};
+template <class Tag, class G, class F> [[nodiscard]] constexpr auto mark(G inner, F f) {
+  return marked<Tag, F, G>{{f}, inner};
+}
+
+template <class T> constexpr bool is_marked_v = false;
+template <class Tag, class F, class G> constexpr bool is_marked_v<marked<Tag, F, G>> = true;
+template <class T>
+concept closure_like = is_fn_v<std::remove_cvref_t<T>> || is_blank_v<T>;
+
+// `**g` — the outer `*` on an already-marked `*g`. Exact match beats the derived-to-base conversion
+// the hidden friend `operator*(fn)` would need, so this wins without ambiguity; `inner` rides along.
+template <class F, class G> [[nodiscard]] constexpr auto operator*(marked<star_tag, F, G> g) {
+  return mark<star2_tag>(g.inner, [g](auto &&...x) -> decltype(auto) {
+    return *static_cast<fn<F, nochain> const &>(g)(std::forward<decltype(x)>(x)...);
+  });
+}
+
+// `f &&& g` == `f && (&g)` — fanout: one input, both closures, a pair out.
+template <closure_like L, class F, class G>
+[[nodiscard]] constexpr auto operator&&(L f, marked<amp_tag, F, G> g) {
+  return fn{[f, h = g.inner](auto &&...x) -> decltype(auto) {
+    return std::pair{f(std::forward<decltype(x)>(x)...), h(std::forward<decltype(x)>(x)...)};
+  }};
+}
+
+// `f <<* g` == `f << (*g)` — compose, right to left: `x -> f(g(x))`. The arrow of `->*` runs the
+// other way, so the two spell both directions without either being the odd one out.
+template <closure_like L, class F, class G>
+[[nodiscard]] constexpr auto operator<<(L f, marked<star_tag, F, G> g) {
+  return fn{[f, h = g.inner](auto &&...x) -> decltype(auto) {
+    return f(h(std::forward<decltype(x)>(x)...));
+  }};
+}
+
+// `f *** g` == `f * (*(*g))` — product: each side of a pair through its own closure. Takes two
+// arguments or one pair, so it drops straight into a `transform` over a map.
+template <closure_like L, class F, class G>
+[[nodiscard]] constexpr auto operator*(L f, marked<star2_tag, F, G> g) {
+  return fn{[f, h = g.inner]<class... X>(X &&...x) -> decltype(auto) {
+    if constexpr (sizeof...(X) == 2)
+      return [&]<class A, class B>(A &&a, B &&b) {
+        return std::pair{f(std::forward<A>(a)), h(std::forward<B>(b))};
+      }(std::forward<X>(x)...);
+    else
+      return [&]<class P>(P &&pp) {
+        return std::pair{f(std::get<0>(std::forward<P>(pp))), h(std::get<1>(std::forward<P>(pp)))};
+      }(std::forward<X>(x)...);
+  }};
+}
+
+// `f ->* g` — compose, left to right: `x -> g(f(x))`. Not synthetic at all: `->*` is a real, single,
+// overloadable operator that nothing else in the library claims, which is why composition gets it.
+template <closure_like L, closure_like R> [[nodiscard]] constexpr auto operator->*(L f, R g) {
+  return fn{[f, g](auto &&...x) -> decltype(auto) { return g(f(std::forward<decltype(x)>(x)...)); }};
+}
+#endif // TACIT_COMBINATORIAL_OPERATORS
 template <class F, class L> fn(F, L) -> fn<F, L>;
 
 // The comma section proper (declared above) — its vocabulary needs the tables, like `fn`'s.
@@ -1938,6 +2072,12 @@ using tacit::_;
 #undef TACIT_ADL_TFN
 #undef TACIT_TFREE1
 #undef TACIT_STD_TFREES
+#undef TACIT_MARK_INNER
+#undef TACIT_PLAIN
+#undef TACIT_MARK_AMP
+#undef TACIT_MARK_STAR
+#undef TACIT_UNARY_AS
+#undef TACIT_FN_UNARY_AS
 #undef TACIT_UNPAREN
 #undef TACIT_MAKE_BLANK
 #undef TACIT_MAKE_SLOT
