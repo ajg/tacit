@@ -741,6 +741,46 @@ One primary, no specializations, no ambiguity, no bound — and it is the same a
 `pick`), so the value-pack version shares a shape with what is there rather than inventing a second
 one. This is the foundation `$1`/`$2` should be built on.
 
+#### `$` as a class rather than a function (explored; rejected)
+
+A class would buy back the one thing the function cannot have — **a scope**. `$<int>::of<F>` works for
+a class template and is ill-formed for a function template, and CTAD plus a deduction guide keeps the
+term form, so a class-`$` sketch compiles with both cells occupied:
+
+```cpp
+template <class... A> struct $ {
+  template <template <class...> class F> using of = F<A...>;
+  template <template <class...> class F> struct as { template <class... X> using with = F<X...>; };
+  constexpr explicit $(A... a) requires (sizeof...(A) > 0);   // `$(42)` via a deduction guide
+};
+$<int>::of<std::vector>   // std::vector<int>   — the `::` a function can never have
+$(std::vector{1,2,3})     // CTAD              — the term form survives
+```
+
+**But it forfeits kind-overloading entirely, and that is the whole point of the function.** A class
+template can be neither overloaded nor kind-polymorphic:
+
+```
+error: template parameter has a different kind in template redeclaration
+```
+
+So a class `$` cannot take a template-template argument (`$<std::map>` is a hard error — `std::map` is
+not a type) and therefore loses `$<std::map>(…)`, `$<std::map, _, int>(…)`, and mixed value/type lists
+— i.e. all of `make`, partial CTAD included. The trade is: **a class buys `::`, which `hole`/`bind`
+already spell conformingly; a function buys kind-overloading, which nothing else in the language does.**
+Since `make` is the only genuinely new capability `$` unlocks, the function keeps it.
+
+Two further costs, both practical rather than fundamental. CTAD on `$(v)` deduces `$<std::vector<int>>`
+— by **value**, so the wrapper silently copies its subject unless extra guides (`$(T&) -> $<T&>`) are
+written; the function `lift` decides that deliberately, per-argument. And a class makes `$` a bare
+**type name**, so `$ x{v};` becomes a declaration — a fourth syntactic role for a symbol that was
+chosen partly because it is never bare.
+
+`()` versus `{}` would matter only mildly: both do CTAD, but braces forbid narrowing, prefer any
+`initializer_list` constructor, and permit aggregate initialisation without a constructor at all.
+`${42}` and `$(42)` would agree; `${1, 2}` would reach an `initializer_list` overload that `$(1, 2)`
+would not, which is precisely the ambiguity `make<F>(a…)` inherits from writing `F{a…}` by hand.
+
 #### Spellings considered and set aside
 
 - **`t::_<int>`** (type world in its own namespace) — legal and zero-risk, but a foreign scope reads as

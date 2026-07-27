@@ -748,7 +748,12 @@ namespace detail {
 // operator sections, it carries the same std vocabulary as `_` — but every member COMPOSES through
 // the wrapped projection, so `_.front().size()` == `x -> size(front(x))`: that is member chaining.
 template <class F, class Last> struct fn {
-  F f;
+  // `[[no_unique_address]]` so a closure built purely from `_` is genuinely EMPTY, not merely small.
+  // `_ > _` wraps a captureless lambda, and an empty `fn` means `std::set<int, decltype(_ > _)>` pays
+  // nothing for its comparator — the container's empty-base optimisation applies exactly as it does
+  // for `std::greater<>`. Without this the two members would occupy a byte each and every such
+  // container would grow.
+  [[no_unique_address]] F f;
   // Chain state: `nochain` for every projection that is not a comparison section. See "comparison
   // chains" above — `last` recovers the rightmost operand of the comparison this `fn` represents.
   [[no_unique_address]] Last last{}; // (the initializer keeps plain `fn{f}` warning-clean)

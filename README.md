@@ -257,6 +257,26 @@ positions are exactly what plain CTAD would have given.
 it, while `make<F>(…)` creates the subject and so must own it. `auto v = make<std::vector>(1,2,3)` is
 a `std::vector` you can hand to anything. Wrap it in `lift`/`$` if you want the vocabulary.
 
+#### Closures as types: `decltype(_ > _)` for `std::greater<>`
+
+A closure built purely from `_` holds nothing, so it is **default-constructible and empty** — exactly
+what a comparator or hasher template parameter wants. `decltype` is the whole crossing:
+
+```cpp
+std::set<int, decltype(_ > _)> s{3, 1, 2};        // descending — *s.begin() == 3
+make<std::set, _, decltype(_ > _)>(3, 1, 2);      // deduce the element, order by `>`
+static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));  // costs nothing
+```
+
+`_` reaches one step into the type world here with no type-level machinery at all: the closure stays
+an ordinary value. Binding a *value* correctly forfeits it — `decltype(_ > 3)` is not
+default-constructible, because it has to keep the 3.
+
+A **composed** closure (`_.size() < _.size()`, `!(_ < _)`) is not stateless today even though it
+holds nothing that matters: sections are built as capturing lambdas, and any capture deletes the
+default constructor whether or not the captured object is empty. Ordering by a projection wants the
+value form meanwhile — `std::ranges::sort(v, {}, _.size())` — which needs no type at all.
+
 Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>` families
 (`array`, `span`) are out of reach — no loss, since their extent is deduced and their one type
 argument is all partial CTAD could have fixed. And holes reach four positions deep, which covers every
