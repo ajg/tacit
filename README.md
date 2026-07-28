@@ -17,14 +17,10 @@ std::ranges::count_if(nums, _ == 0);
 std::ranges::transform(words, out, _.size());
 ```
 
-`_` is the one name that enters your scope: `using tacit::_;` imports exactly `_` — the vocabulary is
-reached *through* the object, and the operator sections are hidden friends found by ADL,
-so they need no `using`. Everything else is a qualified `tacit::` helper that never enters your scope.
-(The free-function combinators live behind `#define TACIT_COMBINATORS`, off by default — see
-[Composition](#composition).)
-
-Prefer `#include` alone? `#define TACIT_USING_UNDERSCORE` before including and the header does the
-`using` for you — opt-in, so it never imposes a global `_` on anyone who didn't ask.
+`using tacit::_;` imports exactly one name. The vocabulary is reached *through* the object, the
+operator sections are hidden friends found by ADL, and everything else is a qualified `tacit::`
+helper. If you'd rather not write the `using` at all, `#define TACIT_USING_UNDERSCORE` before
+including and the header does it for you.
 
 ## Requirements
 
@@ -52,12 +48,11 @@ lambda the moment you need to reorder or reuse an argument.
 A blank can also *project*: an `fn` in argument position applies its projection to the fill, so
 `_.push_back(_.size())` is `(c, x) -> c.push_back(size(x))`.
 
-A blank always means "another fill", including where that reading is less obvious — `_[_]` is
-`(x, i) -> x[i]`, `_ += _` is `(a, b) -> a += b`, `_(_)` is `(f, x) -> f(x)`, and `_.size() < _` is
-`(v, n) -> size(v) < n`. Where a blank *cannot* be filled, the expression is rejected where you write
-it rather than building a closure nothing can call: a chained call binds its arguments, so
-`_.front().substr(_)` is a compile error, not a dead closure. (`_.substr(_)` is fine — that section
-does fill its own blanks.)
+A blank always means "another fill", even where that reading is less obvious — `_[_]` is
+`(x, i) -> x[i]`, `_(_)` is `(f, x) -> f(x)`, and `_.size() < _` is `(v, n) -> size(v) < n`. Where a
+blank *cannot* be filled, the expression is rejected where you write it: a chained call binds its
+arguments, so `_.front().substr(_)` is a compile error, not a dead closure. (`_.substr(_)` is fine —
+that section fills its own blanks.)
 
 ### Vocabulary
 
@@ -66,53 +61,43 @@ does fill its own blanks.)
 (`size`, `begin`, `end`, `empty`, `data`, …) routes through the `std::ranges` customization points, so
 `_.size()` / `_.begin()` also work on C arrays, string views, and third-party ranges.
 
-The table reaches past containers, since the names that pay off in point-free code are the ones you
-project or test with: diagnostics (`what`, `code`, `message`), `filesystem::path` (`extension`,
-`stem`, `filename`, `parent_path`, `is_absolute`, …), the monadic family (`and_then`, `transform`,
-`or_else`, `value_or`, `error_or`, `transform_error`), concurrency (`join`, `joinable`, `load`,
-`store`, `fetch_add`, `wait`, `valid`), streams (`good`, `eof`, `is_open`, `flush`), `bitset`
-(`test`, `all`, `any`, `none`, `flip`), `regex` match results (`position`, `prefix`, `suffix`,
-`ready`), `complex` (`real`, `imag`), `chrono` (`count`, `time_since_epoch`), and `span`
-(`subspan`, `size_bytes`). Names cost nothing until used — each is a member template, so a wider
-table is a longer declaration list, not a bigger binary.
+The table reaches past containers to the names you project or test with: diagnostics (`what`,
+`message`), `filesystem::path` (`extension`, `stem`, `filename`, …), the monadic family (`and_then`,
+`transform`, `value_or`, …), concurrency (`join`, `load`, `wait`, …), streams, `bitset`, `regex`
+match results, `complex`, `chrono`, and `span`. Names cost nothing until used — each is a member
+template, so a wider table is a longer declaration list, not a bigger binary.
 
-**Tuple-like projection** is the one vocabulary name whose argument is a *template* argument, so it
-gets its own spelling — by index or by type, either of which composes like any other verb:
+**Tuple-like projection** takes a *template* argument, so it gets its own spelling — by index or by
+type, either of which composes like any other verb:
 
 ```cpp
 _.get<0>()                              // x -> std::get<0>(x)
 _.get<std::string>()                    // by type
 _.get<1>().size()                       // composes onward
-std::ranges::sort(v, {}, _.get<0>());   // sort a vector of tuples by their first element
+std::ranges::sort(v, {}, _.get<0>());   // sort by first element
 std::ranges::count_if(v, _.get<0>() > 1)
 ```
 
-It reaches the free `get<…>(x)` first — which is the real route for `tuple`, `pair`, `array`,
-`variant` and `subrange`, none of which have a member `get` — and falls back to a member `get<…>()`
-for types that spell it that way. The plain `_.get()` (`shared_ptr`, `unique_ptr`, `future`) is
-untouched: the two overload rather than collide.
-
-This is also the only place `<…>` is reachable from `_` at all. A template-argument list after a
-*bare* name demands that the name be a template, which `_` can never be — but after a `.` it binds to
-a member function template, so `_.get<0>()` is legal where `_<0>` is not. Both `<0>` and `<int>` fit
-under one name because member function templates, unlike class templates, can be overloaded on
-parameter kind.
+It reaches the free `get<…>(x)` first — the real route for `tuple`, `pair`, `array`, `variant` and
+`subrange` — and falls back to a member `get<…>()` for types that spell it that way. The plain
+`_.get()` (`shared_ptr`, `unique_ptr`, `future`) is untouched: the two overload rather than collide.
 
 The rest of the **type-argument** family follows the same shape:
 
 ```cpp
-_.to<std::vector>()                     // C++23 ranges::to — the pipeline terminator
-_.to<std::vector<long>>()               // ...or spelled out
-_.any_cast<int>()                       _.holds_alternative<std::string>()
-_.duration_cast<std::chrono::seconds>() _.static_pointer_cast<Derived>()
+_.to<std::vector>()                       // C++23 ranges::to, pipeline terminator
+_.to<std::vector<long>>()                 // ...or spelled out
+_.any_cast<int>()
+_.holds_alternative<std::string>()
+_.duration_cast<std::chrono::seconds>()
+_.static_pointer_cast<Derived>()
 ```
 
-These are reached *unqualified*, by ADL — so the header still includes twelve standard headers and
-not `<any>`, `<variant>`, `<memory>` or `<chrono>`. A caller holding a `std::any` has already
-included `<any>`; one who isn't gets a clean rejection. (`ranges::to` is the exception: `std::ranges`
-isn't an associated namespace of `std::vector`, so it's qualified.) `ranges::to` is also
-feature-tested — it's C++23 but shipped in libstdc++ 14 and libc++ 17, so `_.to<C>()` is simply not
-declared on g++-13; `#if TACIT_HAS_RANGES_TO` to test for it.
+These are reached *unqualified*, by ADL, so the header doesn't have to include `<any>`, `<variant>`,
+`<memory>` or `<chrono>` — a caller holding a `std::any` has already included `<any>`. (`ranges::to`
+is the exception: `std::ranges` isn't an associated namespace of `std::vector`, so it's qualified.
+It's also feature-tested — it shipped in libstdc++ 14 and libc++ 17, so `_.to<C>()` is simply not
+declared on g++-13; `#if TACIT_HAS_RANGES_TO` to test for it.)
 
 **Field-style verbs.** `pair`'s components are data members, not calls, and read better without empty
 parentheses:
@@ -123,11 +108,9 @@ std::ranges::count_if(v, _.second.size() == 2u)
 _.first(p) = 9;                              // a reference, so it writes through
 ```
 
-Two limits, both from `first` being a *field* rather than a call. It does not chain **from** a
-projection — `_.front().first` has no member to find — and the lift does not mirror it, since
-`$(p).first` would have to *be* the value and a data member can't compute one. Both hops spell the
-same access as `.get<0>()`. This is the one place `$(x).f() == _.f()(x)` doesn't apply, because the
-rule is about calls.
+Because `first` is a field rather than a call, it doesn't chain **from** a projection
+(`_.front().first` has no member to find) and the lift doesn't mirror it — both hops spell the same
+access as `.get<0>()`.
 
 There is a type-level table too — see *Type level*, below.
 
@@ -135,34 +118,32 @@ There is a type-level table too — see *Type level*, below.
 
 The comparison, arithmetic, bitwise, shift, and logical operators are finite and lexical: `_ == y`,
 `x + _`, `_ + _` all build the obvious closure (a one-sided form is unary; `_ op _` is a two-input
-combiner, like the `_.size() < _.size()` comparator). Unary forms work too — `-_`, `!_`, `~_`,
-`*_` (deref), `++_` — as does streaming (`os << _`, so `ranges::for_each(v, std::cout << _)`) and member access
-through a pointer, `_->size()`, which uses the pointee's real `operator->` (distinct from `(*_).size()`).
+combiner). Unary forms work too — `-_`, `!_`, `~_`, `*_` (deref), `++_` — as does streaming
+(`os << _`, so `ranges::for_each(v, std::cout << _)`) and member access through a pointer,
+`_->size()`, which uses the pointee's real `operator->`.
 
 **Comparisons chain.** C++ parses `0 < _ < 10` as `(0 < _) < 10` — a *bool* compared against 10, so
 the closure is silently always true. A comparison section therefore remembers its rightmost operand,
 and a comparison applied to one rewrites itself into the conjunction the notation means:
 
 ```cpp
-0 < _ < 10        // x -> (0 < x) && (x < 10)      not  ((0 < x) < 10)
-1 <= _.size() < 4 // x -> (1 <= size(x)) && (size(x) < 4)
-0 <= _ <= 10 < 20 // chains to any length, any mix of == != < > <= >=
+0 < _ < 10          // x -> (0 < x) && (x < 10)      not  ((0 < x) < 10)
+1u <= _.size() < 4u // x -> (1 <= size(x)) && (size(x) < 4)
+0 <= _ <= 10 < 20   // chains to any length, any mix of == != < > <= >=
 ```
 
 The middle term is evaluated once per link (so keep a projection cheap and pure) and `&&`
 short-circuits, exactly as in the spelled-out form. Only those six operators build a chain; any other
-operator ends it — `(0 < _) + 0 < 2` is still arithmetic on the bool, and `!(_ < 10)` is a plain
-negated predicate. The flip side of the rule is that a comparison *of* a comparison chains too:
-`(_ < 10) == false` reads as `(x < 10) && (10 == false)`, not `x >= 10` — spell that one `_ >= 10`.
-`_ < _` is unaffected: with two blanks it's the two-input comparator, not a link.
+operator ends it. One gotcha: `(_ < 10) == false` chains too — it reads as
+`(x < 10) && (10 == false)`, not `x >= 10`; spell that one `_ >= 10`. `_ < _` is unaffected: with two
+blanks it's the two-input comparator, not a link.
 
-Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` build sections that
-bind the argument by reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an
-ordinary section too (`_ | 4`, `_ | _`), symmetric with `&`; general function composition lives in
-`tacit::compose`, not in `|`.
+Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` bind the argument by
+reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an ordinary section
+(`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose`, not in `|`.
 
 **Comma builds tuples.** `,` is the one section that makes data rather than calling something, and
-the only n-ary one — each further `,` appends an operand rather than pairing with what came before:
+the only n-ary one — each further `,` appends an operand:
 
 ```cpp
 (_, _)                 // (a, b)    -> std::pair{a, b}
@@ -172,12 +153,9 @@ the only n-ary one — each further `,` appends an operand rather than pairing w
 (_, 5, _)              // (a, b)    -> {a, 5, b}   bound: no fill
 ```
 
-Two operands stay a `std::pair` — `.first` / `.second` are strictly extra, since a pair is a
-two-tuple for `get`, `tuple_size`, structured bindings, and `std::apply` alike. Three or more have no
-pair to be, so they're a `std::tuple`. The operand list is **flat**: `(_, (_, _))` and
-`((_, _), _)` are the same three-slot tuple, and there's no nested-pair spelling — reach for a
-lambda if you want one. The parens around a comma section are load-bearing everywhere `,` would
-otherwise read as a separator (argument lists, init-lists, declarations) — that's the built-in comma
+Two operands stay a `std::pair`; three or more are a `std::tuple`. The operand list is **flat** —
+`(_, (_, _))` and `((_, _), _)` are the same three-slot tuple. The parens are load-bearing everywhere
+`,` would otherwise read as a separator (argument lists, init-lists) — that's the built-in comma
 doing its usual job, untouched.
 
 The usual blank rule applies, and it's the thing to watch: each `_` is a **distinct** blank, so
@@ -189,68 +167,50 @@ tacit::fanout(_.size(), _.front())  // x      -> {size(x), front(x)}
 (_.size(), _.front())               // (a, b) -> {size(a), front(b)}
 ```
 
-A comma section composes onward through the value it builds, keeping its arity — the vocabulary and
-the comparisons both apply to the `pair`/`tuple` that comes out:
+A comma section composes onward through the value it builds, keeping its arity — the six comparisons
+(the operators `pair` and `tuple` actually have) apply to what comes out:
 
 ```cpp
 (_, _) == std::pair{1, 2}   // (a, b) -> {a, b} == {1, 2}
 (_, _) < std::pair{2, 0}    // (a, b) -> lexicographic, as pair defines it
-(_, _, _) < std::tuple{…}   // likewise at three
 ```
-
-Comparisons only: the six are the operators `pair` and `tuple` actually have, so arithmetic and
-bitwise stay off a data builder. The result is an ordinary `fn`, so it keeps composing
-(`!((_, _) == p)`). Bound arguments only in a chained call — a blank inside one (`(_, _).foo(_)`) is
-not a further slot, exactly as it isn't for a projection, where `_.front().substr(_)` has never taken
-one: the fills belong to the operand list. Worth knowing that the member half is dormant on the
-default surface, since `std::pair` and `std::tuple` expose no name from the vocabulary table; it
-comes alive for a `TACIT_VERBS` name that they do have.
 
 ### Composition
 
 The closure `_` hands back is itself composable, so a projection and a section chain without ever
-naming a lambda — sections, subscript (`_[i]`), and arithmetic all build a new closure:
+naming a lambda:
 
 ```cpp
-std::ranges::count_if(v, _.size() >= 2);        // size(x) >= 2
+std::ranges::count_if(v, _.size() >= 2u);       // size(x) >= 2
 std::ranges::sort(v, _.size() < _.size());      // order by size
 
 auto scaled = (_ + 1) * 2;         // x -> (x + 1) * 2
 auto head   = _[0];                // x -> x[0]
 ```
 
-Composition is **arity-preserving**, so a two-input form composes exactly like a one-input one:
-`(_ + _) + 1` is `(a, b) -> (a + b) + 1`, and `(_ < _).size()` is `(a, b) -> size(a < b)`. The one
-place arity is load-bearing is argument position, where a *one-fill* closure is a projected blank
-(`_.push_back(_.size())`) while a *many-fill* one is an ordinary bound value — which is what lets
-`_.sort(_ < _)` pass a comparator. The genuinely partial forms (`_.foo(_)`, which is still filling
-its own blanks) stay partial applications.
+Composition is **arity-preserving**: `(_ + _) + 1` is `(a, b) -> (a + b) + 1`. Arity is load-bearing
+only in argument position, where a *one-fill* closure is a projected blank (`_.push_back(_.size())`)
+while a *many-fill* one is an ordinary bound value — which is what lets `_.sort(_ < _)` pass a
+comparator.
 
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
-`x -> size(front(x))` — handy as a projection: `sort(words, {}, _.front().size())`.
+`x -> size(front(x))` — `_.front().size()(words)` is the length of the first word.
 
-For composing *arbitrary* closures left-to-right there's `tacit::compose(f, g, …)` (`x -> …(g(f(x)))`),
-behind `#define TACIT_COMBINATORS` — `compose(_ + 1, _ * 2)(3)` is `8`. (There's no `f | g` compose:
-`|` is a bitwise section like `&`. Member chaining still composes vocabulary on the default surface.)
-
-A few more `_`-agnostic combinators live behind the same `#define TACIT_COMBINATORS` (off by default,
-to keep the surface at `_`): `tacit::fanout(f, g, …)` maps a value to a tuple of projections
-(`x -> {f(x), g(x)}`), `tacit::first` / `tacit::second` transform one component of a pair, and the
-`*_element` family (`transform_elements`, `any_of_element`, …) drives a closure over a tuple-like.
-Each returns an `fn`, so results keep composing. They're free `tacit::` functions, so they take
-qualification and the `#define`; the operator sections don't.
+A few `_`-agnostic combinators live behind `#define TACIT_COMBINATORS` (off by default, to keep the
+surface at `_`): `tacit::compose(f, g, …)` composes arbitrary closures left-to-right
+(`compose(_ + 1, _ * 2)(3)` is `8`), `tacit::fanout(f, g, …)` maps a value to a tuple of projections,
+`tacit::first` / `tacit::second` transform one component of a pair, and the `*_element` family
+(`transform_elements`, `any_of_element`, …) drives a closure over a tuple-like. Each returns an `fn`,
+so results keep composing.
 
 ### Application
 
 There's a third way to apply. Where `_.size()` applies a *named member* and `_ == y` applies an
-*operator*, `_(args...)` applies the **subject itself** — it builds `[args...](f){ return f(args...); }`,
-the closure that calls its argument. It mirrors mapping a function over data: `_(3)` fans the value `3`
-across a set of callables, while `_()` (no args) simply invokes — handy for forcing a thunk.
+*operator*, `_(args...)` applies the **subject itself** — the closure that calls its argument. `_(3)`
+fans the value `3` across a set of callables, while `_()` simply invokes — handy for forcing a thunk:
 
 ```cpp
 _(3)(std::negate{}); // -> -3
-
-// or:
 
 std::vector<std::function<void()>> thunks{};
 std::ranges::for_each(thunks, _()); // invoke each thunk
@@ -258,12 +218,9 @@ std::ranges::for_each(thunks, _()); // invoke each thunk
 
 ## The term wrapper
 
-`_` is a blank, awaiting its subject. `tacit::lift(x)` is the other side: it hands the vocabulary a
-subject it already has, and applies it **eagerly**.
-
-`tacit::lift(x)` is the term-level counterpart: it gives a plain value the vocabulary it may not have
-as members, and applies it **eagerly**. The rule is exactly `lift(x).f(a…)` == `_.f(a…)(x)`, so there
-is one vocabulary and one dispatch, not two to keep in step:
+`_` is a blank, awaiting its subject. `tacit::lift(x)` is the other side: it gives a plain value the
+vocabulary it may not have as members, and applies it **eagerly**. The rule is exactly
+`lift(x).f(a…)` == `_.f(a…)(x)`, so there is one vocabulary and one dispatch, not two to keep in step:
 
 ```cpp
 lift(v).size()        // ranges::size(v) — even where v.size() doesn't exist
@@ -272,13 +229,13 @@ lift("abc").length()  // 3
 ```
 
 Two things worth knowing. A string literal's raw type is never what you mean — `const char[4]` has no
-members, and `ranges::size("abc")` is **4** because it counts the NUL — so a char array is normalized
-to `string_view` on the way in. And a lifted call hands back the operation's own result, not a wrapper,
-so chaining continues on that result's own type.
+members, and `ranges::size("abc")` counts the NUL — so a char array is normalized to `string_view` on
+the way in. And a lifted call hands back the operation's own result, not a wrapper, so chaining
+continues on that result's own type.
 
-The vocabulary grew a third dispatch kind for this: beside member calls and the range CPOs, names that
-are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `ceil`, `round`, `log`, `isnan`, …)
-route to `std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
+The vocabulary has a third dispatch kind for this: beside member calls and the range CPOs, names that
+are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `round`, `isnan`, …) route to
+`std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
 
 ### Making a value: `make` and partial CTAD
 
@@ -290,25 +247,25 @@ make<std::vector, double>(1.0, 2.0)         // std::vector<double>       — arg
 make<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>  — PARTIAL CTAD
 ```
 
-The third line is the one C++ cannot otherwise spell. Class template argument deduction is
-all-or-nothing: the moment you want to fix *one* argument you must write them all, including the ones
-the compiler was about to work out for you. `std::set<int, std::greater<>>{3,1,2}` re-types that `int`
-by hand — and it is exactly the argument most likely to change out from under you. A `_` in the list
-means **deduce this position**; everything else is fixed, and trailing parameters you never mention
-re-default as usual:
+The third line is the one C++ cannot otherwise spell: CTAD is all-or-nothing, so fixing *one*
+template argument means writing them all — `std::set<int, std::greater<>>{3,1,2}` re-types that `int`
+by hand. A `_` in the list means **deduce this position**; everything else is fixed, and trailing
+parameters you never mention re-default as usual:
 
 ```cpp
 make<std::map, _, _, std::greater<>>(pairs…)          // deduce key and mapped type, fix the order
 make<std::unordered_map, _, _, _, _, MyAlloc>(p)      // deduce four, fix the allocator
 ```
 
-It works by deducing the whole specialization and then overlaying the positions you fixed — the same
-structural decomposition `_::rebind` does. Deduction runs first and unmodified, so the deduced
-positions are exactly what plain CTAD would have given.
+It works by deducing the whole specialization and then overlaying the positions you fixed. Deduction
+runs first and unmodified, so the deduced positions are exactly what plain CTAD would have given.
 
-`make` returns the **value itself**, not a lift of it: `lift(x)` is a view of a subject that outlives
-it, while `make<F>(…)` creates the subject and so must own it. `auto v = make<std::vector>(1,2,3)` is
-a `std::vector` you can hand to anything. Wrap it in `lift`/`$` if you want the vocabulary.
+`make` returns the **value itself**, not a lift of it: `auto v = make<std::vector>(1,2,3)` is a
+`std::vector` you can hand to anything. Wrap it in `lift`/`$` if you want the vocabulary.
+
+Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>`
+families (`array`, `span`) are out of reach — no loss, since their one type argument is all partial
+CTAD could have fixed. And blanks reach four positions deep, which covers every standard container.
 
 #### Closures as types: `decltype(_ > _)` for `std::greater<>`
 
@@ -321,20 +278,11 @@ make<std::set, _, decltype(_ > _)>(3, 1, 2);      // deduce the element, order b
 static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));  // costs nothing
 ```
 
-`_` reaches one step into the type world here with no type-level machinery at all: the closure stays
-an ordinary value. Binding a *value* correctly forfeits it — `decltype(_ > 3)` is not
-default-constructible, because it has to keep the 3.
-
-A **composed** closure (`_.size() < _.size()`, `!(_ < _)`) is not stateless today even though it
-holds nothing that matters: sections are built as capturing lambdas, and any capture deletes the
-default constructor whether or not the captured object is empty. Ordering by a projection wants the
-value form meanwhile — `std::ranges::sort(v, {}, _.size())` — which needs no type at all.
-
-Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>` families
-(`array`, `span`) are out of reach — no loss, since their extent is deduced and their one type
-argument is all partial CTAD could have fixed. And blanks reach four positions deep, which covers every
-standard container: a blank means "deduce", and a *trailing* deduced argument is already deduced by
-simply not writing it, so blanks only ever need to reach as far as the last argument you fix.
+Binding a *value* correctly forfeits this — `decltype(_ > 3)` is not default-constructible, because
+it has to keep the 3. A **composed** closure (`_.size() < _.size()`) isn't stateless today either:
+sections are built as capturing lambdas, and any capture deletes the default constructor. Ordering by
+a projection wants the value form anyway — `std::ranges::sort(v, {}, _.size())` — which needs no type
+at all.
 
 ### The `$` wrapper (opt-in)
 
@@ -351,36 +299,26 @@ $("abc").length()   // 3
 $(v).size()         // ranges::size(v)
 ```
 
-It is a **function**, not a macro — so it keeps its namespace, obeys ADL, can be written
-`tacit::$(x)`, and claims nothing from the rest of the translation unit.
-
-`$(p)->f()` reaches through a handle to the pointee, mirroring `_->f()`, for the case a value has no
-useful members of its own:
+It is a **function**, not a macro — it keeps its namespace, obeys ADL, and claims nothing from the
+rest of the translation unit. `$(p)->f()` reaches through a handle to the pointee, mirroring `_->f()`:
 
 ```cpp
 $(ptr)->size()      // ptr->size()
 $(ptr).use_count()  // the holder's own vocabulary, on the dot surface
 ```
 
-`$` is a **one-hop lift**, not a fluent facade: a call hands back the operation's natural result, not
-a wrapper, so `$(v).front()` is a `std::string&`. If you need two hops you are describing a
-computation, and that is `_`'s job — `_.front().size()(v)` says it better, and is reusable.
+`$` is a **one-hop lift**, not a fluent facade: a call hands back the operation's natural result, so
+`$(v).front()` is a `std::string&`. If you need two hops you are describing a computation, and that
+is `_`'s job — `_.front().size()(v)` says it better, and is reusable.
 
 Because `$` is a function *template*, `$<F>(a…)` is `make<F>(a…)` — the other closed cell, under the
-same short name. `$(x)` adopts a value; `$<F>(…)` builds one:
+same short name. The two can never collide: a call with no explicit template arguments cannot deduce
+`F`, so `$(42)` only ever reaches the lift.
 
 ```cpp
 $<std::vector>(1, 2, 3)                  // std::vector<int>
 $<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>
 ```
-
-The two can never collide: a call with no explicit template arguments cannot deduce `F`, so `$(42)`
-only ever reaches the lift.
-
-That is as far as `$` reaches into the type world, and the boundary is the language's rather than a
-choice: `$` is a function, so `$<std::map>::anything` is ill-formed — a qualified name cannot refer
-into a specialization of a function template. `$<F>` yields values. Naming a *type* still wants
-`blank`/`bind`/`apply`/`rebind`, or `decltype` around a `make`.
 
 It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
 `-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift` and
@@ -401,47 +339,36 @@ std::ranges::sort(v, {}, (_.size()) ->* (_ * 2));
 ```
 
 C++'s overloadable-operator set is closed, so none of these is an operator. Each is a **token
-sequence** the lexer splits, by maximal munch, into operators that already exist: `f &&& g` is binary
-`&&` applied to `f` and unary `&` applied to `g`. One glyph to a reader, two operators to the
-compiler.
+sequence** the lexer splits into operators that already exist: `f &&& g` is binary `&&` applied to
+`f` and unary `&` applied to `g`. One glyph to a reader, two operators to the compiler. Which
+spellings survive maximal munch is not a matter of taste — Haskell's `&&&` and `***` do; `|||`, `>>>`
+and `<<<` do not — and the full sweep is in `tacit_extras.md`.
 
-Which spellings survive that is not a matter of taste. Of 7194 candidate sequences, 615 are stolen by
-maximal munch — `a + + b` is not `+` twice, it is `++` — and of the 391 practical ones, 368 compile.
-Haskell's `&&&`, `***` and `+++` survive; `|||`, `>>>` and `<<<` do not (`>>>` lexes as `>>` `>`, and
-`> g` is not an expression). That's why composition is `->*`: a real, single, overloadable operator
-nothing else claimed. The full sweep is in `tacit_extras.md`.
+**What it costs.** Under the gate, unary `&` and `*` on a closure return a type that *derives* from
+`fn`, so `(&_)(c) == &c` and `(*_) + 1` are unchanged and every section still finds it. Exactly one
+reading is given up: `f && (&g)`, logical-and against an address-of closure — which is why this is
+gated.
 
-**What it costs.** Both halves are already spoken for — `f && g` is the logical-and section, `&g` the
-address-of section — so a sigil can only be carved out of what those mean. Under the gate, unary `&`
-and `*` on a closure return a type that *derives* from `fn`, so `(&_)(c) == &c` and `(*_) + 1` are
-unchanged and every section still finds it. Exactly one reading is given up: `f && (&g)`,
-logical-and against an address-of closure. That's the whole price, and it's why this is gated.
-
-**Precedence is inherited, and bites twice.** A sigil has none of its own: it takes the binary half's
-on the left, while the unary half grabs only the primary expression on its right. `->*` sits just
-below postfix, so both operands usually want parentheses — `_ + 1 ->* _ * 2` parses as
-`_ + (1 ->* _) * 2`. `&&&` sits near the bottom, so its left operand needs none, but `f &&& _ * 2` is
-still `f && ((&_) * 2)`; write `f &&& (_ * 2)`.
+**Precedence is inherited.** A sigil takes the binary half's precedence on the left, while the unary
+half grabs only the primary expression on its right — so operands usually want parentheses:
+`_ + 1 ->* _ * 2` parses as `_ + (1 ->* _) * 2`, and `f &&& _ * 2` is `f && ((&_) * 2)`; write
+`f &&& (_ * 2)`.
 
 ## Type level
 
-Pain. Avoided for now.
-
-There *is* a working type-level surface — `_::blank<>` with `of`/`as`, `_::rebind`, the noun
-projections, `bind`/`apply` — and `tests/lift.cpp`, `tests/typelevel.cpp`, `tests/typeproject.cpp`
-and `tests/typeapply.cpp` show what it does. But the notation never came out pleasant, for reasons
-that turned out to be language rules rather than taste: a name is one *kind* of entity per scope, so
-`_` cannot be both the value and a template, and `_ < _` stops parsing the moment it tries.
+Deliberately not on the default surface. A working experimental surface exists — `_::blank<>` with
+`of`/`as`, `_::rebind`, the noun projections, `bind`/`apply` — and `tests/typelevel.cpp`,
+`tests/typeproject.cpp` and `tests/typeapply.cpp` show what it does. But the notation never came out
+pleasant, for reasons that turned out to be language rules rather than taste: a name is one *kind* of
+entity per scope, so `_` cannot be both the value and a template.
 
 The full account — everything attempted and why each failed, including the parts that *do* work — is
-in `tacit_extras.md` under **Four quadrants**. Read that before reopening it; the dead ends are
-thoroughly mapped.
+in `tacit_extras.md` under **Four quadrants**. Read that before reopening it.
 
 ## Teach `_` your own names
 
-`_` is the only placeholder — there is no separate derived object to learn or spell. To hand it a
-domain vocabulary, pre-`#define` **`TACIT_VERBS`** (a comma list of member-call names) before the
-include, and each name becomes first-class on the same `_`:
+To hand `_` a domain vocabulary, pre-`#define` **`TACIT_VERBS`** (a comma list of member-call names)
+before the include, and each name becomes first-class on the same `_`:
 
 ```cpp
 #define TACIT_VERBS make_deposit, balance, is_frozen
@@ -453,10 +380,9 @@ std::ranges::sort(accounts, {}, _.balance());   // now first-class on _
 std::ranges::count_if(accounts, _.is_frozen()); // also on projections and _->
 ```
 
-Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a hard
-error — a domain verb sits safely alongside the standard vocabulary. The same list also lands on `_`'s
-composable projections (`_.balance() < _.balance()`) and on the arrow proxy (`_->balance()`), so a
-verb behaves everywhere the built-in names do.
+Each verb is `requires`-guarded, so a name a given type lacks is a clean SFINAE miss rather than a
+hard error. The same list also lands on `_`'s composable projections (`_.balance() < _.balance()`)
+and on the arrow proxy (`_->balance()`), so a verb behaves everywhere the built-in names do.
 
 ### A vocabulary file
 
@@ -478,21 +404,17 @@ TACIT_NOUN(money_type)            // _::money_type::of<X>
 #include <tacit/_.hpp>
 ```
 
-The gain over a bare list is that each entry picks its **dispatch kind**, so a domain free function or
-customization point is reachable — `TACIT_VERBS` can only make member calls. The file is expanded once
-per surface (`_`, its projections, `->`, comma sections, the lift), X-macro style, which is why it must
-contain nothing but entries and carry no include guard.
-
-It makes an ODR mismatch far less likely, not impossible: a TU that points `TACIT_VOCABULARY`
-elsewhere still gets a different `_`, and mixing those in one program is an ODR violation like any
-other.
-
-Blank detection is trait-based, so `_` is recognised as a blank in any argument position.
+The gain over a bare list is that each entry picks its **dispatch kind**, so a domain free function
+or customization point is reachable — `TACIT_VERBS` can only make member calls. The file is expanded
+once per surface, X-macro style, which is why it must contain nothing but entries and carry no
+include guard. It makes an ODR mismatch far less likely, not impossible: a TU that points
+`TACIT_VOCABULARY` elsewhere still gets a different `_`, and mixing those in one program is an ODR
+violation like any other.
 
 ## Reflective hatch (C++26)
 
-When a P2996 toolchain is present (`__cpp_impl_reflection` + `__cpp_lib_reflection`), `TACIT_CORE`
-also provides, for names not in a table:
+When a P2996 toolchain is present (`__cpp_impl_reflection` + `__cpp_lib_reflection`), `_` also
+provides, for names not in a table:
 
 - `_.m<"method">(args...)` — call an arbitrary member resolved by name;
 - `_.field<"x">()` — project a data member by name;
@@ -512,12 +434,11 @@ import tacit;
 using tacit::_;
 ```
 
-Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook is consumed at include time
-and stays with `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to teach it your
-own names (just as `import std;` exports no macros). For the same reason `TACIT_COMBINATORS` can't be
-switched on from the consumer side; build the interface with `-DTACIT_COMBINATORS` to have it export
-the combinators too. Verified on clang; GCC's `-fmodules-ts` isn't reliable for this pattern yet, so
-prefer `#include` there.
+Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook stays with
+`#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to teach it your own names.
+For the same reason `TACIT_COMBINATORS` can't be switched on from the consumer side; build the
+interface with `-DTACIT_COMBINATORS` to have it export the combinators too. Verified on clang; GCC's
+`-fmodules-ts` isn't reliable for this pattern yet, so prefer `#include` there.
 
 ## Build & test
 
@@ -535,8 +456,7 @@ find_package(tacit REQUIRED)   # after `cmake --install`
 target_link_libraries(your_target PRIVATE tacit::tacit)
 ```
 
-Or fetch it with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake) (no extra setup needed — the
-`add_subdirectory` path defines `tacit::tacit` and skips tacit's own tests when consumed):
+Or fetch it with [CPM.cmake](https://github.com/cpm-cmake/CPM.cmake):
 
 ```cmake
 CPMAddPackage("gh:ajg/tacit#master")   # or pin a tagged release
@@ -551,8 +471,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-To run **CI** — every job in `.github/workflows/ci.yml`: the suite, the `import tacit;` module build,
-and both packaging paths — there's `ci.sh`, and a `shell.nix` that pins the compilers it uses:
+To run **CI** — every job in `.github/workflows/ci.yml` — there's `ci.sh`, and a `shell.nix` that
+pins the compilers it uses:
 
 ```sh
 nix-shell --run ./ci.sh                    # clang (CI's clang++-18 leg)
@@ -561,9 +481,8 @@ CXX=g++-13 ./ci.sh                         # or your own compiler, no nix
 ```
 
 It prints which compiler it actually used, and skips (rather than silently drops) anything the local
-platform can't run. On Linux the pins are exactly CI's. On aarch64-darwin two are forced — gcc isn't
-in the binary cache there, and clang 18's stdenv doesn't build — so the shell lands on the nearest
-working clang and says so; `shell.nix` documents each substitution and why.
+platform can't run. On aarch64-darwin the shell substitutes the nearest working clang and says so;
+`shell.nix` documents each substitution and why.
 
 ## License
 
