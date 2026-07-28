@@ -24,7 +24,8 @@ including and the header does it for you.
 
 ## Requirements
 
-- **C++23** (tested on g++ 13 and clang 18, `-std=c++23`). No dependencies beyond the standard library.
+- **C++23** (tested on clang 18 and 22, g++ 13 and 16, `-std=c++23`). No dependencies beyond the
+  standard library.
 - Optional **C++26 reflection (P2996)** unlocks the reflective members; auto-detected, otherwise
   compiled out. See [Reflective hatch](#reflective-hatch-c26).
 
