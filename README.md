@@ -565,16 +565,6 @@ platform can't run. On Linux the pins are exactly CI's. On aarch64-darwin two ar
 in the binary cache there, and clang 18's stdenv doesn't build — so the shell lands on the nearest
 working clang and says so; `shell.nix` documents each substitution and why.
 
-## On the name
-
-`tacit` names the paradigm (point-free / tacit programming). `_`'s own type is just `tacit::_`; `_`
-itself is the *lieutenant* — French *lieu tenant*, literally "place-holding," a stand-in —
-sidestepping the loaded English word "placeholder" (already spoken for by `std::placeholders` and by
-the grammar term *placeholder type specifier* for `auto`); the irony is not lost entirely that
-point-free style almost necessarily involves more points in the literal sense (periods/dots),
-whether through composition syntax like `f . g` in Haskell or member access function objects for
-partial application like `_.m(...)` here.
-
 ## License
 
 Boost Software License 1.0 — see [LICENSE](LICENSE). Chosen for header-only friendliness: the notice
