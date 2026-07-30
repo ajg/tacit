@@ -209,6 +209,19 @@ template <class Y> [[nodiscard]] constexpr auto last_of(Y const &y) {
     return always<Y>{y};
 }
 
+// `x ->* pm`, the member-pointer projection: native `->*` when the operand provides it (a raw
+// pointer, or a class that overloads it), otherwise deref-then-select — which is what lets
+// `_ ->* pm` reach through smart pointers and iterators, where no built-in `->*` exists. This is the
+// `.*` gap-filler: `.*` is not overloadable, so a section is the only way to spell it point-free.
+// Data members only in practice — `(*x).*pmf` is valid solely as the head of a call, so member
+// FUNCTIONS stay with the arrow proxy (`_->f(args)`).
+inline constexpr auto memsel = []<class X, class Y>(X &&x, Y const &y) -> decltype(auto) {
+  if constexpr (requires { std::forward<X>(x)->*y; })
+    return std::forward<X>(x)->*y;
+  else
+    return (*std::forward<X>(x)).*y;
+};
+
 // A "slot" the section fills from a supplied argument: a plain blank (`_`, identity) or an `fn` — a *projected* blank,
 // whose projection is applied to the fill before the call.
 template <class T>
@@ -498,6 +511,24 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
              tacit::detail::nary{}};                                                                                   \
   }
 
+//  The `->*` section — same three forms as TACIT_SECTION, but routed through `memsel` so the
+//  operator keeps its NATURAL meaning (member-pointer projection) on anything dereferenceable:
+//  `_ ->* &W::x` == `p -> (*p).x`, on raw pointers, smart pointers and iterators alike.
+#define TACIT_MEMPTR                                                                                                   \
+  template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator->*(self, Y&& y) {  \
+    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                                      \
+             { return tacit::detail::memsel(std::forward<decltype(x)>(x), y); }};                                      \
+  }                                                                                                                    \
+  template <class X> requires tacit::detail::not_fn<X> [[nodiscard]] friend constexpr auto operator->*(X&& x, self) {  \
+    return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                                      \
+             { return tacit::detail::memsel(x, std::forward<decltype(y)>(y)); }};                                      \
+  }                                                                                                                    \
+  [[nodiscard]] friend constexpr auto operator->*(self, self) {                                                        \
+    return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                                                  \
+             { return tacit::detail::memsel(std::forward<decltype(x)>(x), std::forward<decltype(y)>(y)); },            \
+             tacit::detail::nary{}};                                                                                   \
+  }
+
 //  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
 //  differ by arity. `&_` builds `x -> &x`, not the placeholder's address (use std::addressof if ever
 //  needed); overloading unary `&` is the one to keep in mind.
@@ -598,6 +629,7 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
   TACIT_COMPARE(<=) TACIT_COMPARE(>=) TACIT_SECTION(+) TACIT_SECTION(-)                                                \
   TACIT_SECTION(*) TACIT_SECTION(/) TACIT_SECTION(%) TACIT_SECTION(^)                                                  \
   TACIT_SECTION(&) TACIT_SECTION(|) TACIT_SECTION(&&) TACIT_SECTION(||) TACIT_SECTION(<<) TACIT_SECTION(>>)            \
+  TACIT_MEMPTR                                                                                                         \
   TACIT_UNARY_AS(*, TACIT_MARK_STAR) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~)                 \
   TACIT_UNARY_AS(&, TACIT_MARK_AMP)                            \
   TACIT_UNARY(++) TACIT_UNARY(--) TACIT_UNARY_POST(++) TACIT_UNARY_POST(--)                                            \
@@ -933,6 +965,29 @@ template <class F, class Last> struct fn {
   TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
   TACIT_FN_OP(&) TACIT_FN_OP(|) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
 #undef TACIT_FN_OP
+  // `->*` through a projection keeps its natural meaning too (via `memsel`, like the blank's
+  // section): `_.front() ->* &W::x` == `xs -> (*front(xs)).x`.
+  template <not_fn Y> [[nodiscard]] friend constexpr auto operator->*(fn g, Y y) {
+    if constexpr (is_blank_v<Y>) /* `g ->* _` is two-input, like `_ ->* _` */
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {
+        return memsel(g(std::forward<decltype(a)>(a)), std::forward<decltype(b)>(b)); }, nary{}};
+    else
+      return tacit::detail::fn{
+        [g, y](auto &&...x) -> decltype(auto) { return memsel(g(std::forward<decltype(x)>(x)...), y); }};
+  }
+  template <not_fn X> [[nodiscard]] friend constexpr auto operator->*(X &&x, fn g) {
+    if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ ->* g`, the mirror */
+      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {
+        return memsel(std::forward<decltype(a)>(a), g(std::forward<decltype(b)>(b))); }, nary{}};
+    else
+      return tacit::detail::fn{[g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {
+        return memsel(x, g(std::forward<decltype(y)>(y)...)); }};
+  }
+  template <class G, class L> [[nodiscard]] friend constexpr auto operator->*(fn g, fn<G, L> h) {
+    return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {
+      return memsel(g(std::forward<decltype(a)>(a)), h(std::forward<decltype(b)>(b)));
+    }, nary{}};
+  }
   // The six comparisons are TACIT_FN_OP plus chain state, so `0 < _ < 10` means what it says: when the left operand is
   // itself a comparison section, the new one folds into a conjunction against that section's rightmost operand rather
   // than against its bool RESULT. Every link records its own rightmost operand, so chains of any length and any mix of
@@ -1126,7 +1181,7 @@ template <class F> fn(F) -> fn<F, nochain>;
 // ------------------------------------------------------------------------------------------------
 // SYNTHETIC SIGILS (opt-in: `#define TACIT_COMBINATORIAL_OPERATORS`).
 //
-//     f ->* g      compose, left to right   x -> g(f(x))
+//     f >>* g      compose, left to right   x -> g(f(x))
 //     f <<* g      compose, right to left   x -> f(g(x))
 //     f &&& g      fanout                   x -> {f(x), g(x)}
 //     f *** g      product                  (a, b) -> {f(a), g(b)}   (or one pair in)
@@ -1143,15 +1198,25 @@ template <class F> fn(F) -> fn<F, nochain>;
 // the same way, composes the same way, and the operator sections still find it through its base —
 // while carrying a tag the sigil overloads can dispatch on.
 //
-// What it costs is exactly one reading: `f && (&g)`, logical-and against an address-of closure, now
-// means fanout. Nothing else moves. That expression is not one anybody writes, which is why this is
-// affordable at all — but it is a real trade, and it is why the whole thing is gated.
+// What it costs is ONE READING PER SIGIL — the closure-against-marked-closure form of its binary
+// half:
+//
+//     f && (&g)    was and-of-address    now fanout
+//     f << (*g)    was shift-of-deref    now compose (and `f >> (*g)` its mirror)
+//     f * (**g)    was times-of-deref²   now product
+//
+// Nothing else moves: the unary sections keep their meaning (the marker derives from `fn`), and a
+// non-closure left operand still takes the old reading (`5 && (&g)` binds 5 into the and-section,
+// because the sigil overloads require `closure_like` on the left). The readings given up are ones
+// nobody writes — shifting by a dereference closure, multiplying by a double-deref — which is why
+// this is affordable at all; but it is a real trade, and it is why the whole thing is gated.
 //
 // The exhaustive sweep behind the choice of these four is in tacit_extras.md: of 391 lexically valid
 // two- and three-operator sigils, 368 compile. Haskell's arrow spellings `&&&`, `***` and `+++`
 // survive C++'s lexer; `|||`, `>>>` and `<<<` do not (`>>>` lexes as `>>` `>`, and `> g` is not an
-// expression), which is why composition here is `->*` — a real, single, and until now unclaimed
-// operator — rather than the arrow spelling.
+// expression). Composition is therefore the mirrored pair `>>*` / `<<*`: both directions from the
+// one `*` marker already paid for, arrows pointing the way the data flows. (`->*` is deliberately
+// NOT here — it is a real operator with a real job, the ungated member-pointer projection above.)
 #ifdef TACIT_COMBINATORIAL_OPERATORS
 struct amp_tag {};   // from unary `&` — the fanout half of `&&&`
 struct star_tag {};  // from unary `*` — the compose half of `<<*`
@@ -1192,12 +1257,20 @@ template <closure_like L, class F, class G>
   }};
 }
 
-// `f <<* g` == `f << (*g)` — compose, right to left: `x -> f(g(x))`. The arrow of `->*` runs the
-// other way, so the two spell both directions without either being the odd one out.
+// `f <<* g` == `f << (*g)` — compose, right to left: `x -> f(g(x))`. The arrow of `>>*` runs the
+// other way, so the two spell both directions from the same `*` marker.
 template <closure_like L, class F, class G>
 [[nodiscard]] constexpr auto operator<<(L f, marked<star_tag, F, G> g) {
   return fn{[f, h = g.inner](auto &&...x) -> decltype(auto) {
     return f(h(std::forward<decltype(x)>(x)...));
+  }};
+}
+
+// `f >>* g` == `f >> (*g)` — compose, left to right: `x -> g(f(x))`.
+template <closure_like L, class F, class G>
+[[nodiscard]] constexpr auto operator>>(L f, marked<star_tag, F, G> g) {
+  return fn{[f, h = g.inner](auto &&...x) -> decltype(auto) {
+    return h(f(std::forward<decltype(x)>(x)...));
   }};
 }
 
@@ -1215,12 +1288,6 @@ template <closure_like L, class F, class G>
         return std::pair{f(std::get<0>(std::forward<P>(pp))), h(std::get<1>(std::forward<P>(pp)))};
       }(std::forward<X>(x)...);
   }};
-}
-
-// `f ->* g` — compose, left to right: `x -> g(f(x))`. Not synthetic at all: `->*` is a real, single,
-// overloadable operator that nothing else in the library claims, which is why composition gets it.
-template <closure_like L, closure_like R> [[nodiscard]] constexpr auto operator->*(L f, R g) {
-  return fn{[f, g](auto &&...x) -> decltype(auto) { return g(f(std::forward<decltype(x)>(x)...)); }};
 }
 #endif // TACIT_COMBINATORIAL_OPERATORS
 template <class F, class L> fn(F, L) -> fn<F, L>;
@@ -2092,6 +2159,7 @@ using tacit::_;
 #undef TACIT_FREE1
 #undef TACIT_STD_FREES
 #undef TACIT_SECTION
+#undef TACIT_MEMPTR
 #undef TACIT_UNARY
 #undef TACIT_UNARY_POST
 #undef TACIT_ASSIGN

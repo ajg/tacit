@@ -184,7 +184,8 @@ compound `+= -= *= /= %= ^= &= |= <<= >>=`; and `->`. Notes and decisions:
   have, whereas arithmetic on a data builder would be noise. The member half is dormant against the
   standard vocabulary, which names nothing `std::pair` or `std::tuple` has; it is live for
   TACIT_VERBS.
-- **Deferred / experimental:** `operator->*` and `_[&Member]` (the `.*` gap — `.*` isn't overloadable).
+- **Deferred / experimental:** `_[&Member]`, the value-side `.*` spelling (`operator->*` itself
+  shipped — see below).
 
 ## Vocabulary sweep + arity (implemented)
 
@@ -284,13 +285,15 @@ ranges pipe is unaffected (its left operand is a range, not an `fn`). `f *** g` 
 Skipped as curiosities: Reader `>>=`, the pointwise function `Monoid`, `fix`. Sum-type Arrow
 (`+++` / `|||`, dispatch over `variant`/`expected`) is feasible but deferred until a real use appears.
 
-**`operator->*` = member-pointer projection** *(planned, agreed)* — give `->*` its natural meaning, not
-a combinator: `_ ->* &Widget::x` == `p -> (*p).x`, i.e. "deref, then select the pointed-to member". A
-hidden friend, ungated, works on anything dereferenceable (raw / `shared_ptr` / iterator); verified on
-g++-13 / clang-18. It's the only way to spell member-pointer projection at all, since `.*` isn't
-overloadable — the deferred "`.*` gap" filler. Clean for **data** members; **member-function** pointers
-are awkward (`obj.*pmf` is only valid as a call head, can't carry args), so methods stay with the
-`_->f(args)` arrow proxy. The value side (non-pointer) would be `_[&Widget::x]` via subscript.
+**`operator->*` = member-pointer projection** *(implemented)* — `->*` has its natural meaning, not a
+combinator: `_ ->* &Widget::x` == `p -> (*p).x`, i.e. "deref, then select the pointed-to member". A
+hidden friend, ungated, native `->*` where the operand provides one and deref-then-select otherwise,
+so it works on anything dereferenceable (raw / `shared_ptr` / iterator). It's the only way to spell
+member-pointer projection at all, since `.*` isn't overloadable — the deferred "`.*` gap" filler.
+Clean for **data** members; **member-function** pointers are awkward (`obj.*pmf` is only valid as a
+call head, can't carry args), so methods stay with the `_->f(args)` arrow proxy. Reclaiming the
+operator meant re-spelling the sigil compose as `>>*` (below). The value side (non-pointer) is still
+open: `_[&Widget::x]` via subscript.
 
 **Operator-glyph combinators** *(parked — explored, not adopted)* — whether a multi-character glyph
 like `_ &&& _` could carry a combinator (fanout / parallel / compose). Findings, all proven on
@@ -811,10 +814,14 @@ token eats its prefix. `a + + b` is not `+` twice, it is `++`; `a + & & b` is no
 | `>>>` compose | unavailable | lexes `>>` `>`, and `> g` is not an expression |
 | `<<<` compose | unavailable | lexes `<<` `<`, same reason |
 
-That `>>>` is unavailable is why composition here is spelled **`->*`** — a real, single, overloadable
-operator that nothing else in the library claimed.
+That `>>>` and `<<<` are unavailable is why composition is the mirrored pair **`>>*` / `<<*`**: the
+nearest spellings that do lex, both carved from the same `*` marker, arrows pointing the way the
+data flows. (An earlier revision spent `->*` on left-to-right compose because it was "a real, single,
+unclaimed operator" — but that was exactly the argument against: being a real operator, `->*` has a
+real meaning, member-pointer projection, which the library now provides ungated. A sigil must be
+synthetic; an operator should mean what it means.)
 
-**What shipped** (behind `TACIT_COMBINATORIAL_OPERATORS`): `->*` compose left-to-right, `<<*` compose
+**What shipped** (behind `TACIT_COMBINATORIAL_OPERATORS`): `>>*` compose left-to-right, `<<*` compose
 right-to-left, `&&&` fanout, `***` product.
 
 **The mechanism, and its one cost.** Both halves of every sigil are already spoken for: `f && g` is
@@ -827,17 +834,21 @@ every section still finds it through its base, and `is_fn_v<marked>` is speciali
 breaks the overload ambiguity — without it the ordinary `fn op value` sections claim a marked right
 operand as a bound value and the candidates tie).
 
-The single reading given up is `f && (&g)` — logical-and against an address-of closure. Nobody writes
-it. That is why this is affordable, and why it is nonetheless gated.
+The cost is one reading **per sigil** — the closure-against-marked-closure form of its binary half:
+`f && (&g)` now means fanout, `f << (*g)` and `f >> (*g)` compose, `f * (**g)` product. Nothing else
+moves: the unary sections keep their meaning through the `fn` base, and a non-closure left operand
+still takes the old reading (the sigil overloads require `closure_like` on the left). Nobody writes
+any of the four. That is why this is affordable, and why it is nonetheless gated.
 
-**Precedence is inherited, and it bites twice.** A sigil has no precedence of its own — it takes the
-binary half's on the left, and the *unary* half grabs only the primary expression on its right:
+**Precedence is inherited, and it bites on the right.** A sigil has no precedence of its own — it
+takes the binary half's on the left, and the *unary* half grabs only the primary expression on its
+right:
 
-- `->*` sits just below postfix, so **both** operands usually want parentheses: `_ + 1 ->* _ * 2`
-  parses as `_ + (1 ->* _) * 2`.
-- `&&&` sits near the bottom, so the left operand needs none — but `f &&& _ * 2` is still
-  `f && ((&_) * 2)`, because unary `&` binds tighter than `*`. Right operands past a single postfix
-  expression want parentheses: `f &&& (_ * 2)`.
+- `>>` and `<<` sit below arithmetic, so the left operand of `>>*` / `<<*` needs no parentheses:
+  `_ + 1 >>* (_ * 2)` composes as written.
+- The right operand always does once it passes a single postfix expression: `f >>* _ * 2` is
+  `f >> ((*_) * 2)` and `f &&& _ * 2` is `f && ((&_) * 2)` — write `f >>* (_ * 2)`,
+  `f &&& (_ * 2)`.
 
 #### `$` as a class rather than a function (explored; rejected)
 

@@ -123,6 +123,12 @@ combiner). Unary forms work too — `-_`, `!_`, `~_`, `*_` (deref), `++_` — as
 (`os << _`, so `ranges::for_each(v, std::cout << _)`) and member access through a pointer,
 `_->size()`, which uses the pointee's real `operator->`.
 
+Its sibling `->*` keeps its natural meaning, member-pointer projection: `_ ->* &Widget::x` is
+`p -> (*p).x`. Since `.*` is not overloadable this is the only point-free spelling there is, so the
+section falls back to deref-then-select where no built-in `->*` exists — smart pointers and
+iterators work, not just raw pointers. Data members only: `(*p).*pmf` is valid solely as a call
+head, so member *functions* stay with `_->f(args)`.
+
 **Comparisons chain.** C++ parses `0 < _ < 10` as `(0 < _) < 10` — a *bool* compared against 10, so
 the closure is silently always true. A comparison section therefore remembers its rightmost operand,
 and a comparison applied to one rewrites itself into the conjunction the notation means:
@@ -330,30 +336,33 @@ It is gated because `$` is not an identifier in standard C++ — a GCC/Clang ext
 `#define TACIT_COMBINATORIAL_OPERATORS` before including:
 
 ```cpp
-f ->* g     // compose, left to right   x -> g(f(x))
+f >>* g     // compose, left to right   x -> g(f(x))
 f <<* g     // compose, right to left   x -> f(g(x))
 f &&& g     // fanout                   x -> {f(x), g(x)}
 f *** g     // product                  (a, b) -> {f(a), g(b)}   (or one pair in)
 
 (_.size() &&& _.front())(std::string("abc"))     // {3, 'a'}
-std::ranges::sort(v, {}, (_.size()) ->* (_ * 2));
+std::ranges::sort(v, {}, _.size() >>* (_ * 2));
 ```
 
 C++'s overloadable-operator set is closed, so none of these is an operator. Each is a **token
 sequence** the lexer splits into operators that already exist: `f &&& g` is binary `&&` applied to
 `f` and unary `&` applied to `g`. One glyph to a reader, two operators to the compiler. Which
 spellings survive maximal munch is not a matter of taste — Haskell's `&&&` and `***` do; `|||`, `>>>`
-and `<<<` do not — and the full sweep is in `tacit_extras.md`.
+and `<<<` do not — and the full sweep is in `tacit_extras.md`. Composition is the mirrored pair
+`>>*` / `<<*`, both carved from the one `*` marker; `->*` is deliberately *not* a sigil — it is a
+real operator with a real (ungated) job, the member-pointer projection above.
 
 **What it costs.** Under the gate, unary `&` and `*` on a closure return a type that *derives* from
-`fn`, so `(&_)(c) == &c` and `(*_) + 1` are unchanged and every section still finds it. Exactly one
-reading is given up: `f && (&g)`, logical-and against an address-of closure — which is why this is
-gated.
+`fn`, so `(&_)(c) == &c` and `(*_) + 1` are unchanged and every section still finds it. One reading
+is given up **per sigil** — the closure-against-marked-closure form of its binary half: `f && (&g)`,
+`f << (*g)`, `f >> (*g)`, `f * (**g)`. None is an expression anybody writes, which is why the trade
+is affordable — and why it is nonetheless gated.
 
-**Precedence is inherited.** A sigil takes the binary half's precedence on the left, while the unary
-half grabs only the primary expression on its right — so operands usually want parentheses:
-`_ + 1 ->* _ * 2` parses as `_ + (1 ->* _) * 2`, and `f &&& _ * 2` is `f && ((&_) * 2)`; write
-`f &&& (_ * 2)`.
+**Precedence is inherited.** A sigil takes the binary half's precedence on the left — `>>` sits
+below arithmetic, so `_ + 1 >>* (_ * 2)` needs no parentheses on the left — while the unary half
+grabs only the primary expression on its right, so right operands usually want them:
+`f >>* _ * 2` is `f >> ((*_) * 2)` and `f &&& _ * 2` is `f && ((&_) * 2)`; write `f &&& (_ * 2)`.
 
 ## Type level
 

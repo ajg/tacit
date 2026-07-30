@@ -99,6 +99,10 @@ int main() {
   std::ostringstream os;
   std::ranges::for_each(std::vector{1, 2}, os << _);
   assert(os.str() == "12");
+  struct Widget { int x; };
+  Widget widget{5};
+  assert((_ ->* &Widget::x)(&widget) == 5);                        // member-pointer projection
+  assert((_ ->* &Widget::x)(std::make_shared<Widget>(widget)) == 5); // through a smart pointer too
 
   assert((0 < _ < 10)(5));
   assert(!(0 < _ < 10)(10));

@@ -140,5 +140,23 @@ int main() {
     assert(_.get()(p) == p.get()); // the smart pointer's own member still via dot
   }
 
+  // ---- operator->* : member-pointer projection, the `.*` gap-filler ----
+  // Native `->*` where the operand has one (raw pointer), deref-then-select where it does not
+  // (smart pointer, iterator) — data members only; member functions stay with `_->f(args)`.
+  {
+    struct W { int x; };
+    W w{7};
+    assert((_ ->* &W::x)(&w) == 7);                          // raw pointer: native ->*
+    auto sp = std::make_shared<W>(W{9});
+    assert((_ ->* &W::x)(sp) == 9);                          // smart pointer: (*sp).*pm
+    std::vector<W> ws{{1}, {2}, {3}};
+    assert((_ ->* &W::x)(ws.begin() + 1) == 2);              // iterator too
+    assert((&w ->* _)(&W::x) == 7);                          // mirror: pointer waits for the member
+    assert((_ ->* _)(&w, &W::x) == 7);                       // two-blank: fully binary
+    assert((_.front() ->* &W::x)(std::vector<W*>{&w}) == 7); // and through a projection
+    (_ ->* &W::x)(&w) = 8;                                   // an lvalue: assignable through it
+    assert(w.x == 8);
+  }
+
   return 0;
 }
