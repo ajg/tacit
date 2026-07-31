@@ -48,12 +48,12 @@ Costs are measured and small; see [Costs, limits, coexistence](#costs-limits-coe
 
 ## Requirements
 
-- **C++23** (tested on clang 18 and 22, g++ 13 and 16, `-std=c++23`). No dependencies beyond the
-  standard library.
-- **MSVC: sanity-checked, not yet CI'd.** v19.latest compiles the core, `$`, and `λ` clean at `/W4`
-  and runs representative probes correctly, with `/std:c++latest /utf-8 /Zc:preprocessor` (the last
-  is required — the vocabulary's X-macro engine uses `__VA_OPT__`). The full test suite awaits a
-  Windows CI leg.
+- **C++23**, no dependencies beyond the standard library. The full suite runs in CI on **clang 18
+  and 22**, **g++ 13 and 16** (`-std=c++23`), and **MSVC v19.4x** (`/std:c++latest`).
+- On MSVC, `/utf-8` and `/Zc:preprocessor` are required and not implied by `/std:c++latest` — the
+  first for `λ.hpp`'s encoding, the second because the vocabulary's X-macro engine uses
+  `__VA_OPT__`. CMake users get both automatically. One gap: MSVC hasn't implemented C++23's
+  UCN/glyph identifier equivalence, so `λ` works there but its `\u{3BB}` spelling does not.
 - Optional **C++26 reflection (P2996)** unlocks the reflective members; auto-detected, otherwise
   compiled out. See [Reflective hatch](#reflective-hatch-c26).
 
@@ -496,7 +496,7 @@ with `!`"), and a non-copyable temporary bound into a closure ("name it first").
 **Runtime.** A tacit closure is an ordinary lambda composition — no type erasure, nothing virtual;
 codegen spot-checks against hand-written lambdas are in `tacit_extras.md`.
 
-**MSVC** is sanity-checked but not CI'd (see Requirements for the flags).
+**MSVC** runs the full suite in CI (see Requirements for its two required flags).
 
 **If your codebase already has a `_`:**
 

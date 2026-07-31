@@ -144,3 +144,15 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     real Windows runner (a `windows-2022` GitHub Actions leg is the cheap durable route). The
     single/ files earned their keep here: self-contained one-file payloads are exactly what a
     compile API wants.
+
+17. ~~Windows CI leg.~~ **DONE, BLOCKING** — `windows-2022`, VS2022 MSVC, Debug config (Release's
+    NDEBUG would vaporize every assert and pass the suite vacuously), `ctest --timeout 60` because
+    a failing Debug assert pops a MODAL DIALOG and the runner waits out the whole job — 25 minutes,
+    observed. Four rounds to green, and the first two findings were real: MSVC parses and silently
+    IGNORES `[[no_unique_address]]` (ABI freeze), so closures were not empty there and the
+    stateless-comparator guarantee was broken until `TACIT_NO_UNIQUE_ADDRESS` started spelling
+    `[[msvc::no_unique_address]]`; and MSVC has not implemented C++23 P2314 (UCN/glyph macro
+    equivalence), so λ works there but `\u{3BB}` does not — documented, tests scoped. The last two
+    failures were POSIX assumptions in the tests (`filesystem::path::string_type` is `wstring` on
+    Windows; `/tmp/x` is a RELATIVE path there), fixed by asserting against what the type itself
+    reports. 29/29 on all three compiler families.

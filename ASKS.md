@@ -31,14 +31,15 @@ What a win looks like: any conforming route to the glyph — or a committee-faci
 `$` in identifiers should be standardized (it is the most requested identifier character in every
 adjacent language). We would happily co-author that paper.
 
-## 3. MSVC coverage
+## 3. Toolchains beyond the three
 
-Sanity-checked, not proven: MSVC v19.latest compiles the core, `$`, and `λ` clean at `/W4` and runs
-representative probes correctly (verified via Compiler Explorer), with
-`/std:c++latest /utf-8 /Zc:preprocessor` — the last is non-negotiable, the vocabulary's X-macro
-engine uses `__VA_OPT__`. What remains is the real thing: run the full test suite on Windows
-(`cmake -B build && ctest --test-dir build`), tell us what breaks, or better, send the workflow
-leg. "It all passed" is a fine first report.
+MSVC is now CI-covered (it earned its keep immediately: it ignores `[[no_unique_address]]`, which
+had quietly broken the stateless-comparator guarantee there). Still unprobed, in rough order of
+how much we'd like to know: **clang-cl** (clang front end, MSVC ABI — what many Windows shops
+actually use), **AppleClang** (its libc++ is the one that hard-bans specializing `std::tuple`),
+**EDG** (the front end behind Visual Studio's IntelliSense — "compiles on EDG" means no red
+squiggles), **Intel ICX**, and anything embedded. A green report is useful; a red one with the
+error text is better.
 
 ## 4. Stateless *composed* closures
 
