@@ -1,9 +1,8 @@
-// `$` — the term wrapper, behind `TACIT_DOLLAR`. It is `tacit::lift` under a shorter name, so the
-// rule is the same: `$(x).f(a...)` == `_.f(a...)(normalize(x))`. What this file pins is that `$` is a
-// *function* — namespaced, qualifiable, ADL-obeying — rather than a macro, and that the gate keeps it
-// out of a default build entirely.
-#define TACIT_DOLLAR
-#include <tacit/_.hpp>
+// `$` — the canonical short name of the term wrapper, in its own header: including <tacit/$.hpp> is
+// the opt-in (no macro), and `<tacit/_.hpp>` alone never sees the identifier. The rule is
+// `$(x).f(a...)` == `_.f(a...)(normalize(x))` == `lift(x).f(a...)`. What this file pins is that `$`
+// is a *function* — namespaced, qualifiable, ADL-obeying — rather than a macro.
+#include <tacit/$.hpp>
 
 #include <algorithm>
 #include <cassert>

@@ -658,8 +658,9 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
   }                                                                                                                    \
   /* a template, not a plain friend: a non-template body with a deduced return type is compiled                        \
      with the class, which would instantiate comma_section<self, self> — and so std::tuple<_, _> —                     \
-     during the header parse, ambiguating the TACIT_STD_BLANKS specialisation of std::tuple declared                   \
-     below it. As a template it is instantiated on use, like every other comma overload. */                            \
+     during the header parse, ambiguating the std::tuple specialisation a later include of                             \
+     <tacit/experimental/std_blanks.hpp> declares. As a template it is instantiated on use, like                       \
+     every other comma overload. */                            \
   template <class = void>                                                                                              \
   [[nodiscard]] friend constexpr auto operator,(self a, self b) {                                                      \
     return tacit::detail::make_comma(a, b);                                                                            \
@@ -1489,8 +1490,8 @@ template <template <class, std::size_t> class F, class Old, std::size_t N, class
 //   blank<>::as<std::vector>::with<int>   // std::vector<int>   — head is given
 //
 // `bind<F, Args...>::with<X...>` (below) is the same arg-blank grain with blanks spelled `_::blank<>` among the
-// arguments; `as` is the spelling that needs no blank marker at all. The opt-in <tacit/$.hpp> aliases this to `$`, so
-// `$<int>::of<F>` is the short form.
+// arguments; `as` is the spelling that needs no blank marker at all. (No `$` shorthand exists at the type level —
+// `$` is a function, and a qualified name cannot refer into a function-template specialisation.)
 template <class... A> struct blank {
   template <template <class...> class F> using of = F<A...>;
   template <template <class...> class F> struct as {
@@ -1924,42 +1925,10 @@ template <template <class...> class F, class... Fixed, class... A> [[nodiscard]]
 }
 } // namespace detail
 
-#define TACIT_UNPAREN(...) __VA_ARGS__
-#define TACIT_MAKE_BLANK tacit::blank<>                 /* the fixed-list marker: deduce here */
-#define TACIT_MAKE_SLOT tacit::detail::blank_value auto /* the parameter slot a `_` argument binds */
-#define TACIT_MAKE_ONE(NAME, PARAMS, FIXED)                                                                            \
-  template <template <class...> class F, TACIT_UNPAREN PARAMS, class... B>                                             \
-  [[nodiscard]] constexpr auto NAME(auto &&...a) {                                                                     \
-    return tacit::detail::make_<F, TACIT_UNPAREN FIXED, B...>(static_cast<decltype(a)>(a)...);                         \
-  }
-// The whole overload set under one name — `make` always, `$` too when it is enabled.
-#define TACIT_MAKE_OVERLOADS(NAME)                                                                                     \
-  template <template <class...> class F, class... B> [[nodiscard]] constexpr auto NAME(auto &&...a) {                  \
-    return tacit::detail::make_<F, B...>(static_cast<decltype(a)>(a)...);                                              \
-  }                                                                                                                    \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0), (TACIT_MAKE_BLANK))                                                       \
-  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1), (A0, TACIT_MAKE_BLANK))                                         \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1), (TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))                 \
-  TACIT_MAKE_ONE(NAME, (class A0, class A1, TACIT_MAKE_SLOT A2), (A0, A1, TACIT_MAKE_BLANK))                           \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, TACIT_MAKE_SLOT A2), (TACIT_MAKE_BLANK, A1, TACIT_MAKE_BLANK))   \
-  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2), (A0, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))   \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2),                                   \
-                 (TACIT_MAKE_BLANK, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))                                               \
-  TACIT_MAKE_ONE(NAME, (class A0, class A1, class A2, TACIT_MAKE_SLOT A3), (A0, A1, A2, TACIT_MAKE_BLANK))             \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, class A2, TACIT_MAKE_SLOT A3),                                   \
-                 (TACIT_MAKE_BLANK, A1, A2, TACIT_MAKE_BLANK))                                                         \
-  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, class A2, TACIT_MAKE_SLOT A3),                                   \
-                 (A0, TACIT_MAKE_BLANK, A2, TACIT_MAKE_BLANK))                                                         \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, class A2, TACIT_MAKE_SLOT A3),                         \
-                 (TACIT_MAKE_BLANK, TACIT_MAKE_BLANK, A2, TACIT_MAKE_BLANK))                                           \
-  TACIT_MAKE_ONE(NAME, (class A0, class A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),                                   \
-                 (A0, A1, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))                                                         \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, class A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),                         \
-                 (TACIT_MAKE_BLANK, A1, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))                                           \
-  TACIT_MAKE_ONE(NAME, (class A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),                         \
-                 (A0, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))                                           \
-  TACIT_MAKE_ONE(NAME, (TACIT_MAKE_SLOT A0, TACIT_MAKE_SLOT A1, TACIT_MAKE_SLOT A2, TACIT_MAKE_SLOT A3),               \
-                 (TACIT_MAKE_BLANK, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK, TACIT_MAKE_BLANK))
+// The overload-set generator lives in its own (guard-free, macro-only) header so <tacit/$.hpp> can
+// replay it verbatim as `$` — same shapes, no repetition, no include-order sensitivity. It is
+// consumed and #undef'd here like every other generator.
+#include "detail/make_overloads.hpp"
 
 TACIT_MAKE_OVERLOADS(make)
 
@@ -1993,139 +1962,16 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 
 } // namespace tacit
 
-// ------------------------------------------------------------------------------------------------ Tier 1
-// (experimental, opt-in): natural-spelling type-level blanks, `std::map<struct _, int>::with<char>`. Injects partial
-// specializations of common std containers into `namespace std`, keyed on the blank type `tacit::_`, each exposing a
-// `::with<...>` that reconstructs the container with the blank filled.
-//
-// This is deliberately gated behind TACIT_STD_BLANKS and OFF by default: a specialization of a std class template for
-// `tacit::_` does not meet the original template's requirements (a blank is not a key/value/allocator), so per
-// [namespace.std] it is technically ill-formed (no diagnostic required) — it works on the tested toolchains, but it is
-// a spelling convenience, not a standards guarantee. The portable, always-on surface is `tacit::apply` / `tacit::bind`
-// above. Notes on the shape:
-//   - A trailing pack is not "more specialized" than a fixed-arity primary, so the defaulted
-//     Compare/Allocator params can't hide behind `...`; each SHAPE macro names them explicitly.
-//   - `::with` reconstructs FRESH defaults (map<K,T>, not map<K,T,C,A>): carrying the blank-derived
-//     less<blank>/allocator<...blank...> along would silently poison the result. Cost: you can't thread
-//     an explicit non-default Compare/Allocator through a blank (drop to `apply`/`bind` for that).
-//   - `tuple` is variadic: a single LEADING blank + trailing pack is legal at any arity and portable;
-//     interior blanks and multiple leading-blank specs are not (see tacit_extras.md).
-//   - `array` / `span` are value-parameterized (`<class, size_t>`): only the ELEMENT type is blanked and
-//     the extent rides along as a literal (`array<struct _, 5>::with<int>`). No wrapper is needed
-//     because the value is a normal template argument — the reason this stays natural where the
-//     general primitive would demand a value wrapper. Holing the extent itself has no natural spelling
-//     and is intentionally not offered.
-#ifdef TACIT_STD_BLANKS
-#include <array>
-#include <map>
-#include <set>
-#include <span>
-#include <tuple>
-#include <utility>
-#include <vector>
-namespace std {
-#define TACIT_HOLE ::tacit::blank<> // the type-level blank; `_::blank<>` in user code
-#define TACIT_SPEC_1_1(F)                                                                                              \
-  template <class A0> class F<TACIT_HOLE, A0> {                                                                        \
-  public:                                                                                                              \
-    template <class X> using with = F<X>;                                                                              \
-  };
-#define TACIT_SPEC_1_2(F)                                                                                              \
-  template <class C, class A0> class F<TACIT_HOLE, C, A0> {                                                            \
-  public:                                                                                                              \
-    template <class X> using with = F<X>;                                                                              \
-  };
-#define TACIT_SPEC_2_2(F)                                                                                              \
-  template <class T, class C, class A0> class F<TACIT_HOLE, T, C, A0> {                                                \
-  public:                                                                                                              \
-    template <class K> using with = F<K, T>;                                                                           \
-  };                                                                                                                   \
-  template <class K, class C, class A0> class F<K, TACIT_HOLE, C, A0> {                                                \
-  public:                                                                                                              \
-    template <class V> using with = F<K, V>;                                                                           \
-  };                                                                                                                   \
-  template <class C, class A0> class F<TACIT_HOLE, TACIT_HOLE, C, A0> {                                                \
-  public:                                                                                                              \
-    template <class K, class V> using with = F<K, V>;                                                                  \
-  };
-TACIT_SPEC_1_1(vector)
-TACIT_SPEC_1_2(set)
-TACIT_SPEC_2_2(map)
-#undef TACIT_SPEC_1_1
-#undef TACIT_SPEC_1_2
-#undef TACIT_SPEC_2_2
-// pair: two type params, no defaults — by hand.
-template <class B> struct pair<TACIT_HOLE, B> {
-  template <class X> using with = pair<X, B>;
-};
-template <class A0> struct pair<A0, TACIT_HOLE> {
-  template <class Y> using with = pair<A0, Y>;
-};
-template <> struct pair<TACIT_HOLE, TACIT_HOLE> {
-  template <class X, class Y> using with = pair<X, Y>;
-};
-// tuple: variadic, single leading blank + trailing pack — legal at any arity, portable.
-template <class... R> class tuple<TACIT_HOLE, R...> {
-public:
-  template <class X> using with = tuple<X, R...>;
-};
-// value-parameterized containers: blank the ELEMENT type; the extent (a non-type parameter) rides along as an ordinary
-// literal — std::array<struct _, 5>::with<int> == std::array<int, 5>. This is the user-free grain: the value is a
-// normal template argument, no wrapper, no sentinel. (The mirror — holing the *value* and fixing the type — has no
-// natural spelling: a type blank can't sit in a size_t slot, so it's intentionally absent; reach for a hand-written
-// metafunction to vary an extent.)
-template <std::size_t N> struct array<TACIT_HOLE, N> {
-  template <class T> using with = array<T, N>;
-};
-template <std::size_t E> class span<TACIT_HOLE, E> {
-public:
-  template <class T> using with = span<T, E>;
-};
-#undef TACIT_HOLE
-} // namespace std
-#endif // TACIT_STD_BLANKS
+// Two surfaces deliberately live in sibling headers rather than here:
+//   - `$` — the canonical short name for the term wrapper (`$(x)` == `lift(x)`, `$<F>(a...)` ==
+//     `make<F>(a...)`) — is in <tacit/$.hpp>. `$` in an identifier is a GCC/Clang extension,
+//     rejected under `-pedantic-errors`, so including that header IS the opt-in and this one stays
+//     strictly conforming. Nothing is `$`-only: `lift`/`make` here are the same functions.
+//   - The natural-spelling std blanks (`std::map<struct _, int>::with<char>`, experimental) are in
+//     <tacit/experimental/std_blanks.hpp> — they specialize std templates, which is [namespace.std]
+//     deviancy this header will not carry.
 
-// ------------------------------------------------------------------------------------------------ `$` — the term
-// wrapper (opt-in, `#define TACIT_DOLLAR` before including).
-//
-//     $(42).abs()        $("abc").length()        $(v).size()
-//
-// It is exactly `tacit::lift`, under a shorter name: `$(x).f(a...)` is `_.f(a...)(normalize(x))`, the closed cell of
-// the term world. `$` is spelled as a *function*, not a macro — the macro form only existed to let one name serve both
-// `$<T>` and `$(x)`, and `$` is term-only now. A function keeps its namespace, obeys ADL, can be qualified
-// `tacit::$(x)`, and claims nothing from the rest of the translation unit, so this header has no include-order rule.
-//
-// WHY IT IS GATED. `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under `-pedantic-errors`.
-// Everything it spells is reachable conformingly as `tacit::lift`; nothing is `$`-only. The gate keeps a
-// strictly-conforming default and makes the trade a per-project choice. (It lives here while the surface settles; it
-// wants its own header once it does.)
-#ifdef TACIT_DOLLAR
-namespace tacit {
-template <class X> [[nodiscard]] constexpr auto $(X &&x) { return lift(static_cast<X &&>(x)); }
-
-// ...and `$<F>(a...)` is `make<F>(a...)`, the other closed cell: `$(x)` adopts a value, `$<F>(...)` builds one. The two
-// never collide — a call with no explicit template arguments cannot deduce `F`, so `$(42)` only ever reaches the lift,
-// and `$<std::vector>(1,2,3)` only ever reaches `make`.
-//
-// This is as far as `$` can go into the type world, and the boundary is the language's, not a choice: `$` is a
-// *function*, so `$<std::map>::anything` is ill-formed — a qualified name cannot refer into a specialisation of a
-// function template. `$<F>` yields values; naming a type still wants `blank`/`bind`/`apply`/`rebind`, or `decltype`
-// around a `make`.
-TACIT_MAKE_OVERLOADS($)
-} // namespace tacit
-#ifdef TACIT_USING_UNDERSCORE
-using tacit::$;
-#endif
-#endif
-
-// Opt-in: bring the one symbol into global scope so `#include <tacit/_.hpp>` alone suffices (no `using tacit::_;`). Off
-// by default — a header must not force a global `_` on every includer (gettext's `#define _`, C++26's placeholder `_`,
-// ...). Define it in your own build if you want it.
-#ifdef TACIT_USING_UNDERSCORE
-using tacit::_;
-#endif
-
-// The default path exports exactly one name, `tacit::_`; a single `using tacit::_;` (or the opt-in above) is all a
+// The default path exports exactly one name, `tacit::_`; a single `using tacit::_;` is all a
 // caller needs — the vocabulary is reached through the object and the operator sections are hidden friends found by
 // ADL. `_` is the only placeholder: domain names are taught to it in place with the pre-#define TACIT_VERBS /
 // TACIT_NOUNS hooks (consumed above, at include time), so nothing downstream needs the internal generator macros — the

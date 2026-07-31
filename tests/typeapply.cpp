@@ -1,8 +1,8 @@
 // The general type-level primitive: `tacit::apply` + `tacit::quote`, ungated, currying BOTH grains
 // (fix-template-vary-args AND fix-args-vary-template); plus the experimental natural-spelling std
-// blanks under TACIT_STD_BLANKS. `typelevel.cpp` covers plain `bind`; this file covers what subsumes it.
-#define TACIT_STD_BLANKS
-#include <tacit/_.hpp>
+// blanks in <tacit/experimental/std_blanks.hpp> (including it is the opt-in). `typelevel.cpp` covers
+// plain `bind`; this file covers what subsumes it.
+#include <tacit/experimental/std_blanks.hpp>
 
 #include <array>
 #include <map>
@@ -32,7 +32,7 @@ static_assert(std::is_same_v<apply<_::blank<>, int, _::blank<>>::with<quote<std:
 static_assert(std::is_same_v<apply<quote<std::map>, _::blank<>, _::blank<>>::with<char, int>,
                              bind<std::map, _::blank<>, _::blank<>>::with<char, int>>);
 
-// ---- Tier 1: natural spelling via std blanks (TACIT_STD_BLANKS) --------------------------------------
+// ---- Tier 1: natural spelling via std blanks (<tacit/experimental/std_blanks.hpp>) -------------------
 static_assert(std::is_same_v<std::vector<_::blank<>>::with<int>, std::vector<int>>);
 static_assert(std::is_same_v<std::map<_::blank<>, int>::with<char>, std::map<char, int>>);
 static_assert(std::is_same_v<std::map<char, _::blank<>>::with<int>, std::map<char, int>>);
@@ -41,8 +41,10 @@ static_assert(std::is_same_v<std::pair<_::blank<>, int>::with<char>, std::pair<c
 static_assert(std::is_same_v<std::pair<int, _::blank<>>::with<char>, std::pair<int, char>>);
 static_assert(std::is_same_v<std::pair<_::blank<>, _::blank<>>::with<char, int>, std::pair<char, int>>);
 static_assert(std::is_same_v<std::set<_::blank<>>::with<int>, std::set<int>>);
-// tuple: leading blank, any arity:
+// tuple: leading blank, any arity — absent on libc++ 21+, which hard-bans specializing std::tuple:
+#if TACIT_HAS_STD_TUPLE_BLANKS
 static_assert(std::is_same_v<std::tuple<_::blank<>, int, char>::with<double>, std::tuple<double, int, char>>);
+#endif
 // value-parameterized: blank the element type, the extent (an NTTP) rides along as a literal:
 static_assert(std::is_same_v<std::array<_::blank<>, 5>::with<int>, std::array<int, 5>>);
 static_assert(std::is_same_v<std::span<_::blank<>, 4>::with<int>, std::span<int, 4>>);

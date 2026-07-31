@@ -1,10 +1,11 @@
 OUTSTANDING
 -----------
 
-Repo state as of the last session: working tree clean, `master` at `2661ece`, CI green on all four
-jobs (clang++-18, g++-13, modules, packaging) as of `f815969`. 24 tests; `typeapply` fails locally on
-Apple clang only — a pre-existing `-Winvalid-specialization` rejection of the experimental
-`TACIT_STD_BLANKS` tier, which the CI compilers accept.
+Repo state: CI matrix is clang++-18/22 and g++-13/16 plus modules and packaging jobs. The
+`typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`
+(`[[clang::no_specializations]]`), so the experimental std-blanks header skips the tuple cell there
+and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is marked as of libc++ 21;
+`pair`/`vector`/`set`/`map` are not.
 
 
 1. ~~blank vs hole terminology.~~ **DONE** — `blank` everywhere; `hole<A...>` is now `blank<A...>`,
@@ -39,28 +40,26 @@ Apple clang only — a pre-existing `-Winvalid-specialization` rejection of the 
    example did not compile before. Still outstanding: inferred std types to cut noise, and documenting
    whatever lands from #4 and #6.
 
-6. Need to figure out the best way to split `_` and `$` into `_.hpp` and `$.hpp` with minimal repetition and ideally not needing a shared header (meaning no intra-includes) - potentially a build step produces the two exposed headers.
-   *(Parked: "decide later". The fork is whether `$.hpp` must be usable WITHOUT including `_.hpp`. If
-   it may include it, the split is ~15 lines and needs no build step; if it must stand alone, a build
-   step has to generate both from one source, since the vocabulary tables and `fn` would otherwise be
-   duplicated verbatim.)*
+6. ~~Split `_` and `$` into `_.hpp` and `$.hpp`.~~ **DONE** — the fork resolved toward `$.hpp`
+   including `_.hpp`: `$`-without-`_` was never a real use case (`$<std::set, _, ...>` has `_` in its
+   own examples), so no build step and no duplication. The one mechanical obstacle — `_.hpp` #undefs
+   its generators — is solved by `detail/make_overloads.hpp`, a guard-free macro-only header both
+   public headers include and clean up; include order is immaterial and each header stays macro-clean.
+   The module mirror is `tacit.dollar` (`dollar.cppm`; `$` can't appear in a module name), keeping the
+   opt-in per-consumer where a `-D` on the interface build could not. The std `namespace` deviancy
+   moved out the same way: `<tacit/experimental/std_blanks.hpp>`, opt-in by include, no macro.
+   `TACIT_DOLLAR`, `TACIT_STD_BLANKS` and `TACIT_USING_UNDERSCORE` are all gone — the first two
+   replaced by their headers, the last dropped (`using tacit::_;` is good enough).
 
-7. **OPEN — naming: `tacit::make`.** Unconditional public name, introduced without sign-off, by
-   analogy with the standard's factory vocabulary (`make_shared`, `make_pair`, `make_optional`). It
-   is the term-level counterpart to `bind`, and like `bind`/`apply`/`quote` it is qualified-only, so
-   it never enters anyone's scope — its only oddity is being a common English word.
-
-   The one real argument for changing it: `$` covers both forms under one symbol, while the
-   conforming spelling needs two names — `$(x)` == `lift(x)` but `$<F>(a…)` == `make<F>(a…)`. Folding
-   the builder into `lift` would make the two surfaces isomorphic, at the cost of `lift` carrying two
-   meanings (its stated rule, `lift(x).f(a…) == _.f(a…)(x)`, does not extend to `lift<F>(a…)`).
-
-   Ruled out on inspection: `_::make` (the "one name" promise was never threatened, since
-   `tacit::make` is qualified-only — and a static member is reachable through the object, so
-   `_.make<V>(1,2,3)` would compile and return a *value*, breaking the invariant that `_.f()` is a
-   closure); `tacit::of` (says nothing standalone, and would make `of` mean a third thing beside the
-   `::of` applier and the noun projectors); anything of the form `$name` (`$` is an identifier
-   *character*, so `$std` lexes as ONE token — `$` can never prefix a name).
+7. ~~Naming: `tacit::make`.~~ **RESOLVED** — `$` is now the CANONICAL name for both halves of the
+   term wrapper (`$(x)` == `lift(x)`, `$<F>(a…)` == `make<F>(a…)`), documented as such; `lift` and
+   `make` stay as the conforming spellings for `-pedantic-errors`/MSVC worlds, since `$` in an
+   identifier is a GCC/Clang extension. The asymmetry that motivated the question (one symbol vs two
+   names) is therefore accepted on the conforming side rather than papered over by overloading
+   `lift`. Still ruled out, for the record: `_::make` (a static member is reachable through the
+   object, so `_.make<V>(1,2,3)` would return a *value*, breaking the invariant that `_.f()` is a
+   closure); `tacit::of` (says nothing standalone); anything of the form `$name` (`$` is an
+   identifier *character*, so `$std` lexes as ONE token — `$` can never prefix a name).
 
 8. Named combinators (compose / fanout / first / second, currently behind `TACIT_COMBINATORS`) into a
    sub-namespace — still open, carried over from #4.

@@ -19,8 +19,7 @@ std::ranges::transform(words, out, _.size());
 
 `using tacit::_;` imports exactly one name. The vocabulary is reached *through* the object, the
 operator sections are hidden friends found by ADL, and everything else is a qualified `tacit::`
-helper. If you'd rather not write the `using` at all, `#define TACIT_USING_UNDERSCORE` before
-including and the header does it for you.
+helper.
 
 ## Requirements
 
@@ -291,13 +290,13 @@ sections are built as capturing lambdas, and any capture deletes the default con
 a projection wants the value form anyway — `std::ranges::sort(v, {}, _.size())` — which needs no type
 at all.
 
-### The `$` wrapper (opt-in)
+### `$` — the canonical short name
 
-`$` is `tacit::lift` under a shorter name, behind `#define TACIT_DOLLAR`:
+`$` is the canonical spelling of the term wrapper — `lift` and `make` under one symbol — and it
+lives in its own header, `<tacit/$.hpp>`. Including it is the opt-in; there is no macro:
 
 ```cpp
-#define TACIT_DOLLAR
-#include <tacit/_.hpp>
+#include <tacit/$.hpp>   // brings <tacit/_.hpp> with it
 using tacit::_;
 using tacit::$;
 
@@ -327,9 +326,10 @@ $<std::vector>(1, 2, 3)                  // std::vector<int>
 $<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>
 ```
 
-It is gated because `$` is not an identifier in standard C++ — a GCC/Clang extension, rejected under
-`-pedantic-errors`. Everything it spells is reachable conformingly as `tacit::lift` and
-`tacit::make`; nothing is `$`-only, and a default build never sees it.
+It is a separate header because `$` is not an identifier in standard C++ — a GCC/Clang extension,
+rejected under `-pedantic-errors` — so `<tacit/_.hpp>` alone stays strictly conforming and never
+sees the character. Everything `$` spells is reachable conformingly as `tacit::lift` and
+`tacit::make`; nothing is `$`-only, and a `-pedantic-errors` build simply keeps to those names.
 
 ## Synthetic sigils (opt-in)
 
@@ -437,11 +437,15 @@ path) lets you `#if` on whether they exist.
 ## Modules
 
 `import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
-and re-exports `_`:
+and re-exports `_`, `lift`, `make`, and the type-level names. The header split has a module mirror:
+`$` is its own module, `tacit.dollar` (`dollar.cppm` — a module name can't contain `$`), so the
+opt-in stays per-consumer, exactly as `#include <tacit/$.hpp>` is:
 
 ```cpp
-import tacit;
+import tacit;         // _, lift, make, bind, apply, quote
+import tacit.dollar;  // adds $
 using tacit::_;
+using tacit::$;
 ```
 
 Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook stays with

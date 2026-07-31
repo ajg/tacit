@@ -42,6 +42,13 @@ jobs:
           clang++-18 $FLAGS --precompile tacit.cppm -o tacit.pcm
           clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
           ./module_check
+      - name: Build and run `import tacit.dollar;` (clang)
+        run: |
+          FLAGS="-std=c++23 --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -Iinclude"
+          clang++-18 $FLAGS --precompile dollar.cppm -o dollar.pcm
+          clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm -fmodule-file=tacit.dollar=dollar.pcm \
+            tests/module_dollar_check.cpp tacit.pcm dollar.pcm -o module_dollar_check
+          ./module_dollar_check
 
   packaging:
     runs-on: ubuntu-24.04

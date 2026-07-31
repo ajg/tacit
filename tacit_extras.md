@@ -3,8 +3,9 @@
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
 opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote`; the free-function combinators are
-gated behind `TACIT_COMBINATORS`, and the natural-spelling std blanks behind `TACIT_STD_BLANKS`.
-Everything here is either already in `<tacit/_.hpp>` or a candidate for it.
+gated behind `TACIT_COMBINATORS`; `$` (canonical short name for `lift`/`make`) is opt-in by include,
+`<tacit/$.hpp>`, as are the natural-spelling std blanks, `<tacit/experimental/std_blanks.hpp>`.
+Everything here is either already in one of those headers or a candidate for them.
 
 ## Composition (implemented)
 
@@ -356,7 +357,8 @@ packs impose (a template can't sit in a type slot unquoted); a C++26 reflection 
 templates and types both become `std::meta::info` and the slot list stops needing the wrapper. Naming
 (`apply` / `quote`) is provisional — the mechanism is what's settled, not the spelling.
 
-**Type-level: natural spelling via std blanks** *(implemented, gated `TACIT_STD_BLANKS`, experimental)* —
+**Type-level: natural spelling via std blanks** *(implemented, opt-in by include —
+`<tacit/experimental/std_blanks.hpp>` — experimental)* —
 the sugar tier: `std::map<struct _, int>::with<char>` reading as itself, no `quote`/`apply` ceremony.
 It works by injecting partial specializations of common containers (`vector`, `set`, `map`, `pair`,
 `tuple`) into `namespace std`, each keyed on the blank type and exposing a `::with<...>`. Four facts,
@@ -652,7 +654,7 @@ collision risk point in opposite directions, and collision is the one that bites
 
 The type-level blank is `_::blank<>`, and it is the only spelling. `struct _` and `decltype(_)` were
 both discarded: the placeholder's own type is the *term*-level object, and conflating it with the
-type-level blank is what made the old spelling need a `struct` crutch. `bind`/`apply`/`TACIT_STD_BLANKS`
+type-level blank is what made the old spelling need a `struct` crutch. `bind`/`apply`/the std blanks
 all take `blank<>` now. Watch for silent failure when adding a spelling — an unrecognised blank does not
 error, it quietly becomes a fixed argument (`bind<std::vector, _::blank<>>` compiled and produced
 `std::vector<blank<>>` before the slot-fillers were taught about it).
@@ -895,8 +897,8 @@ would not, which is precisely the ambiguity `make<F>(a…)` inherits from writin
 - **`t::_<int>`** (type world in its own namespace) — legal and zero-risk, but a foreign scope reads as
   a different library rather than the same `_`, and `t` is far too common a name to expose.
 - **`::_<int>`** (global alias, value nested) — works, but forces every TU to nest its
-  `using tacit::_;` inside a namespace or function, breaking `TACIT_USING_UNDERSCORE` and every
-  file-scope example. Taxes the common path to beautify the rare one.
+  `using tacit::_;` inside a namespace or function, breaking every file-scope example. Taxes the
+  common path to beautify the rare one.
 - **`__<int>` / `_t<int>`** (user-written alias) — the fallback if regions prove unwieldy; see the
   conformance ladder. Opt-in by include, so purists never see it.
 - **`$<int>`** (extension identifier, opt-in header) — shorter than a region, never misread as `_<int>`,
