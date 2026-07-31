@@ -36,13 +36,18 @@ struct Account {
 
 int main() {
   // --- Intro ---
+  std::vector<std::pair<int, char>> pairs{{2, 'b'}, {1, 'a'}};
+  std::ranges::sort(pairs, {}, _.get<0>());
+  assert(pairs[0].second == 'a');
+  std::vector<std::string> words{"abc", "de", "abcd", ""};
+  assert(std::ranges::count_if(words, 1u <= _.size() < 4u) == 2);
   std::vector<int> nums{3, 1, 0, 2};
-  std::ranges::sort(nums, _ < _);
-  assert(std::ranges::count_if(nums, _ == 0) == 1);
-  std::vector<std::string> words{"abc", "de"};
-  std::vector<std::size_t> sizes(words.size());
-  std::ranges::transform(words, sizes.begin(), _.size());
-  assert(sizes[0] == 3);
+  std::ranges::for_each(nums, _ *= 2);
+  assert(nums[0] == 6);
+
+  // --- Why this exists: the closure and the lambda agree ---
+  auto lam = [](auto const &w) { return 1 <= w.size() && w.size() < 4; };
+  assert(std::ranges::count_if(words, lam) == std::ranges::count_if(words, 1u <= _.size() < 4u));
 
   // --- Blanks ---
   std::vector<int> c;
@@ -53,7 +58,7 @@ int main() {
   assert(_[_](std::vector<int>{7, 8}, 1) == 8);
   assert(_(_)([](int x) { return x + 1; }, 4) == 5);
   _.push_back(_.size())(c, words);            // projected blank
-  assert(c.back() == 2);
+  assert(c.back() == 4);                      // words.size()
   assert((_.size() < _)(words, std::size_t{3}));
   assert(_.substr(_)(std::string("abcd"), std::size_t{2}) == "cd");
 

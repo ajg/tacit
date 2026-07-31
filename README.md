@@ -12,26 +12,52 @@ forward to a same-named operation on whatever they're later applied to:
 #include <tacit/_.hpp>
 using tacit::_;
 
-std::ranges::sort(nums, _ < _);
-std::ranges::count_if(nums, _ == 0);
-std::ranges::transform(words, out, _.size());
+std::ranges::sort(pairs, {}, _.get<0>());            // project: order by first element
+std::ranges::count_if(words, 1u <= _.size() < 4u);   // comparisons chain, see below
+std::ranges::for_each(nums, _ *= 2);                 // mutating sections update in place
 ```
 
 `using tacit::_;` imports exactly one name. The vocabulary is reached *through* the object, the
 operator sections are hidden friends found by ADL, and everything else is a qualified `tacit::`
 helper.
 
-Two opt-in headers extend the reach, each by including it: `<tacit/$.hpp>` is the eager side —
-`$(x).f()` applies the same vocabulary now, `$<F>(a…)` builds a value — and `<tacit/λ.hpp>` is the
-lambda head, for what no expression can say. One vocabulary, three grammars: `_` for expressions,
-`$` for values, `λ` for statements.
+## Why this exists
+
+The lambda for the middle line above is
+`[](auto const& w) { return 1 <= w.size() && w.size() < 4; }` — the operation appears once, the
+plumbing four times, and the result is neither reusable nor comparable at a glance. `_` inverts that
+ratio.
+
+The obvious alternatives each stop short:
+
+- **Member pointers** (`&std::string::size` as a projection) are not portable C++: since C++20, the
+  standard library forbids taking the address of most of its functions — only a short list of
+  *addressable* ones may be pointed to. `_.size()` is the conforming spelling of that intent, and it
+  also routes through `std::ranges::size`, so it works on C arrays and views where no member exists.
+- **`std::bind_front` / `bind_back`** bind arguments to an existing callable; they don't project
+  members, compose, or build comparators.
+- **Ranges projections** are excellent — where an algorithm offers a projection slot. A tacit
+  closure is an ordinary callable, so it also goes everywhere else: predicates, comparators,
+  `transform`, your own APIs.
+- **Boost.Lambda2** is the nearest relative — placeholder arithmetic on `_1`/`_2`. tacit differs in
+  the vocabulary (`_.size()`, `_.get<0>()`, ~200 standard names — Lambda2 has operators only), in
+  comparison chaining, and in its blank model (each `_` is a distinct anonymous fill; positional
+  reuse is deliberately out — see the FAQ).
+
+Costs are measured and small; see [Costs, limits, coexistence](#costs-limits-coexistence).
 
 ## Requirements
 
 - **C++23** (tested on clang 18 and 22, g++ 13 and 16, `-std=c++23`). No dependencies beyond the
   standard library.
+- **MSVC is untested.** The core is strictly conforming (`-pedantic-errors`-clean), so it *should*
+  work; no claim until CI says so.
 - Optional **C++26 reflection (P2996)** unlocks the reflective members; auto-detected, otherwise
   compiled out. See [Reflective hatch](#reflective-hatch-c26).
+
+Two opt-in headers extend the surface later in this README: `<tacit/$.hpp>` (the eager side, and
+partial CTAD) and `<tacit/λ.hpp>` (the lambda head). Both are include-is-the-opt-in; the default
+surface is just `_`.
 
 ## Concepts
 
@@ -117,7 +143,7 @@ Because `first` is a field rather than a call, it doesn't chain **from** a proje
 (`_.front().first` has no member to find) and the lift doesn't mirror it — both hops spell the same
 access as `.get<0>()`.
 
-There is a type-level table too — see *Type level*, below.
+There is a type-level table too — see `tacit_extras.md`.
 
 ### Operator sections
 
@@ -152,10 +178,15 @@ comparator, not a link.
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` bind the argument by
 reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an ordinary section
-(`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose`, not in `|`.
+(`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose` (behind
+`TACIT_COMBINATORS`), not in `|`.
 
-**Comma builds tuples.** `,` is the one section that makes data rather than calling something, and
-the only n-ary one — each further `,` appends an operand:
+**Comma builds tuples.** Yes — the comma operator, overloaded. Before the reflex fires: every
+overload is a constrained hidden friend that requires a tacit operand (your commas are untouched),
+the results are `[[nodiscard]]`, and the alternative is worse — without the overload, the built-in
+comma **silently discards** half of what you wrote inside `(_, _)`. It earns its place as the one
+section that makes data rather than calling something, and the only n-ary one — each further `,`
+appends an operand:
 
 ```cpp
 (_, _)                 // (a, b)    -> std::pair{a, b}
@@ -172,7 +203,8 @@ doing its usual job, untouched.
 
 The usual blank rule applies, and it's the thing to watch: each `_` is a **distinct** blank, so
 `(_.size(), _.front())` takes *two* arguments — it is not a one-argument key function. For the
-same-input tuple (the lexicographic projection you probably want) that's `tacit::fanout`:
+same-input tuple (the lexicographic projection you probably want) that's `tacit::fanout` — behind
+`#define TACIT_COMBINATORS`, like the other named combinators below:
 
 ```cpp
 tacit::fanout(_.size(), _.front())  // x      -> {size(x), front(x)}
@@ -342,7 +374,8 @@ std::ranges::count_if(v, λ(s) { return s.size() * s.size() > 4u; })  // s used 
 ```
 
 Because the body never passes through the macro, it is plain C++ — commas, statements, multiple
-returns, no escaping rules. Capture is `[&]`. No λ key? `\u{3BB}(x)` is the same identifier —
+returns, no escaping rules. Capture is `[&]` — right for a lambda used where it's written; don't
+store one beyond its scope. No λ key? `\u{3BB}(x)` is the same identifier —
 UCNs are equivalent to the character they name, macros included — so λ works from pure ASCII source. The header is **completely standalone** (it includes
 nothing, not even `_.hpp`) and, unlike `$`, fully conforming: `λ` is a legal C++23 identifier (UAX
 #31), so it survives `-pedantic-errors`; it only asks for UTF-8 source. One caveat has no cure:
@@ -350,49 +383,15 @@ macros cannot cross a module boundary, so `#include <tacit/λ.hpp>` is the perma
 `import` will ever carry it. Why λ can only be a macro at all, and why the `{ return … }` cannot be
 elided, is recorded in `tacit_extras.md`.
 
-## Synthetic sigils (opt-in)
+## Further out: sigils and the type level
 
-`#define TACIT_SIGILS` before including:
-
-```cpp
-f >>* g     // compose, left to right   x -> g(f(x))
-f <<* g     // compose, right to left   x -> f(g(x))
-f &&& g     // fanout                   x -> {f(x), g(x)}
-f *** g     // product                  (a, b) -> {f(a), g(b)}   (or one pair in)
-
-(_.size() &&& _.front())(std::string("abc"))     // {3, 'a'}
-std::ranges::sort(v, {}, _.size() >>* (_ * 2));
-```
-
-C++'s overloadable-operator set is closed, so none of these is an operator. Each is a **token
-sequence** the lexer splits into operators that already exist: `f &&& g` is binary `&&` applied to
-`f` and unary `&` applied to `g`. One glyph to a reader, two operators to the compiler. Which
-spellings survive maximal munch is not a matter of taste — Haskell's `&&&` and `***` do; `|||`, `>>>`
-and `<<<` do not — and the full sweep is in `tacit_extras.md`. Composition is the mirrored pair
-`>>*` / `<<*`, both carved from the one `*` marker; `->*` is deliberately *not* a sigil — it is a
-real operator with a real (ungated) job, the member-pointer projection above.
-
-**What it costs.** Under the gate, unary `&` and `*` on a closure return a type that *derives* from
-`fn`, so `(&_)(c) == &c` and `(*_) + 1` are unchanged and every section still finds it. One reading
-is given up **per sigil** — the closure-against-marked-closure form of its binary half: `f && (&g)`,
-`f << (*g)`, `f >> (*g)`, `f * (**g)`. None is an expression anybody writes, which is why the trade
-is affordable — and why it is nonetheless gated.
-
-**Precedence is inherited.** A sigil takes the binary half's precedence on the left — `>>` sits
-below arithmetic, so `_ + 1 >>* (_ * 2)` needs no parentheses on the left — while the unary half
-grabs only the primary expression on its right, so right operands usually want them:
-`f >>* _ * 2` is `f >> ((*_) * 2)` and `f &&& _ * 2` is `f && ((&_) * 2)`; write `f &&& (_ * 2)`.
-
-## Type level
-
-Deliberately not on the default surface. A working experimental surface exists — `_::blank<>` with
-`of`/`as`, `_::rebind`, the noun projections, `bind`/`apply` — and `tests/typelevel.cpp`,
-`tests/typeproject.cpp` and `tests/typeapply.cpp` show what it does. But the notation never came out
-pleasant, for reasons that turned out to be language rules rather than taste: a name is one *kind* of
-entity per scope, so `_` cannot be both the value and a template.
-
-The full account — everything attempted and why each failed, including the parts that *do* work — is
-in `tacit_extras.md` under **Four quadrants**. Read that before reopening it.
+Two more surfaces exist and are deliberately *not* documented here. **Synthetic sigils**
+(`#define TACIT_SIGILS`) add Haskell's arrow spellings as glued token sequences — `f &&& g` fanout,
+`f *** g` product, `f >>* g` / `f <<* g` compose — with the full maximal-munch sweep, the costs, and
+the precedence rules in `tacit_extras.md`. The **experimental type level** (`bind`/`apply`/`quote`,
+and `std::map<struct _, int>::with<char>` via `<tacit/experimental/std_blanks.hpp>`) lives in the
+same file, along with the design log for everything above. That file is the lab notebook; this one
+is the manual.
 
 ## Teach `_` your own names
 
@@ -473,8 +472,38 @@ using tacit::$;
 Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook stays with
 `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to teach it your own names.
 For the same reason `TACIT_COMBINATORS` can't be switched on from the consumer side; build the
-interface with `-DTACIT_COMBINATORS` to have it export the combinators too. Verified on clang; GCC's
-`-fmodules-ts` isn't reliable for this pattern yet, so prefer `#include` there.
+interface with `-DTACIT_COMBINATORS` to have it export the combinators too. CI verifies the module
+path on clang only; GCC's modules support is not exercised, so prefer `#include` there.
+
+## Costs, limits, coexistence
+
+**Compile time.** Including `<tacit/_.hpp>` costs ~0.1 s over a typical `<vector>`+`<ranges>`+
+`<algorithm>` baseline on clang (~0.30 s vs ~0.19 s, cold); `$.hpp` adds nothing measurable. The
+vocabulary is declarations only — member templates cost nothing until called.
+
+**Error messages.** A misuse is a normal overload-resolution failure, ~10 lines, first line naming
+your call site — not expression-template spew. The two designed rejections are `static_assert`s
+with the fix in the message: a bool folded into a comparison chain ("write `_ >= 10`, or negate
+with `!`"), and a non-copyable temporary bound into a closure ("name it first").
+
+**Runtime.** A tacit closure is an ordinary lambda composition — no type erasure, nothing virtual;
+codegen spot-checks against hand-written lambdas are in `tacit_extras.md`.
+
+**MSVC** is untested (see Requirements).
+
+**If your codebase already has a `_`:**
+
+- **gettext** defines a *function-like* macro `_(...)`, so only the application forms collide
+  (`_(x)`, `_()`); sections like `_ < 10` and `_.size()` survive. In gettext TUs, qualify
+  (`tacit::_`) or bind another name: `constexpr auto& o = tacit::_;`.
+- **GMock's `::testing::_`** — keep the two `using`s in different scopes, or qualify one; they
+  collide only if both are imported into the same scope and then used unqualified.
+- **C++26 name-independent `_`** (P2169) coexists: a local `auto [_, x] = …;` shadows `tacit::_`
+  inside that scope and nowhere else (verified on clang trunk `-std=c++2c`).
+
+**Extending the vocabulary** (`TACIT_VERBS`) is per-TU at include time; every TU in a program must
+see the same definitions or they get differently-shaped `_`s — the vocabulary-file pattern below
+exists to make that mechanical.
 
 ## Build & test
 
