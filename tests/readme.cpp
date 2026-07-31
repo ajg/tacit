@@ -155,8 +155,9 @@ int main() {
   // --- Application ---
   assert(_(3)(std::negate{}) == -3);
   int hits = 0;
-  std::vector<std::function<void()>> thunks{[&] { ++hits; }};
-  std::ranges::for_each(thunks, _());
+  using thunk_t = std::function<void()>;
+  auto thunks = std::vector<thunk_t>{[&] { ++hits; }};
+  std::ranges::for_each(thunks, _()); // invoke each thunk
   assert(hits == 1);
 
   // --- $: the term wrapper ---

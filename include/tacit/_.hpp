@@ -194,10 +194,12 @@ struct same { // the blank itself: the fill, untouched  (`y < _`)
 };
 // (the third is a projection — `y < _.size()` stores the `fn` itself as `last`.)
 
-// Chain state for a bound operand: none if it is a placeholder (`_ < _` is a two-input comparator, not a link),
-// otherwise the constant projection.
+// Chain state for a bound operand: none if it is a placeholder (`_ < _` is a two-input comparator, not a link), and
+// none if the operand is move-only — the chain state is a COPY of the rightmost operand by construction (both the
+// link's own lambda and any following fold need it), so a move-only operand makes an unchained link: `_ == mo` is an
+// ordinary comparison closure, it just cannot be extended into a conjunction. Otherwise, the constant projection.
 template <class Y> [[nodiscard]] constexpr auto last_of(Y const &y) {
-  if constexpr (is_blank_v<Y>)
+  if constexpr (is_blank_v<Y> || !std::is_copy_constructible_v<Y>)
     return nochain{};
   else
     return always<Y>{y};

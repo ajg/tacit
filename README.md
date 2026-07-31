@@ -255,9 +255,15 @@ fans the value `3` across a set of callables, while `_()` simply invokes — han
 ```cpp
 _(3)(std::negate{}); // -> -3
 
-std::vector<std::function<void()>> thunks{};
+using thunk_t = std::function<void()>;
+auto thunks = std::vector<thunk_t>{};
 std::ranges::for_each(thunks, _()); // invoke each thunk
 ```
+
+The traffic runs both ways: a closure is an ordinary callable, so the function wrappers hold it —
+`std::function` for the copyable ones (most sections are), `std::move_only_function` when a section
+binds a move-only value (which makes the closure itself move-only: exactly that wrapper's case), and
+C++26's `std::function_ref` *refers*, so point it at a named closure, never a temporary.
 
 ## The term wrapper: `$`
 
