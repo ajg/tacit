@@ -4,8 +4,9 @@ Design notes for the pieces that sit *around* the core `_` object: what's implem
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
 opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote`; the free-function combinators are
 gated behind `TACIT_COMBINATORS`; `$` (canonical short name for `lift`/`make`) is opt-in by include,
-`<tacit/$.hpp>`, as are the natural-spelling std blanks, `<tacit/experimental/std_blanks.hpp>`.
-Everything here is either already in one of those headers or a candidate for them.
+`<tacit/$.hpp>`, as are the natural-spelling std blanks, `<tacit/experimental/std_blanks.hpp>`, and
+the lambda head `λ`, `<tacit/λ.hpp>` (standalone). Everything here is either already in one of those
+headers or a candidate for them.
 
 ## Composition (implemented)
 
@@ -918,6 +919,52 @@ would not, which is precisely the ambiguity `make<F>(a…)` inherits from writin
   the constant one pays, either with `$` (making the **core** non-conforming, not a quarantined header)
   or with `_()` at every use. Worth keeping in the back pocket: `_()`/`_{}` being valid term blanks means
   that if `_` ever must become a template, the term world degrades rather than vanishes.
+
+### λ: the lambda head (implemented, `<tacit/λ.hpp>`)
+
+`λ(a, b) { return a.size() < b.size(); }` — the macro emits exactly the head, `[&](auto&& a,
+auto&& b)`, and stops. Three impossibility results fix this design; each was checked, not assumed.
+
+**λ can only be a macro.** Its job is to *introduce names* — `a` and `b` do not exist until λ mints
+them — and name introduction is lexical, settled before name lookup runs. Every non-macro entity
+(function, template, even a P2996 reflection) receives things that already exist; none can conjure a
+declarator. Token injection (P3294-family, post-C++26) generates code *inside* declarations, not new
+expression syntax at a use site. Consequence: **no named module can ever carry λ** — modules export
+entities and macros are not entities — so `#include <tacit/λ.hpp>` is the permanent vehicle. (The
+one modular loophole is a C++20 *header unit*, `import "tacit/λ.hpp";`, which does re-export macros
+— where build systems support header units at all.)
+
+**The braces cannot be elided.** A macro invocation ends at its closing parenthesis; the tokens
+after it are not the macro's to transform. Making `λ(x) x * x` work would need the expansion to
+*prefix* an expression and closure-ify it — an expression-to-closure operator, which C++ does not
+have and which is precisely what `_` already is for the grammar it can capture (`_ * 2` needs no λ
+at all). So the brace line is the grammar line: `_` owns expressions, λ owns statements, and there
+is no third form between them.
+
+**The `return` cannot be elided either** — not without paying more elsewhere. The language has no
+expression-bodied lambda (P0573 was rejected), so the only way a macro can supply the `return` is to
+take the body as an argument: `λ(x, x * x)`. That shape was tried and costs top-level-comma
+parenthesization (`λ(x, (f(x, 1)))`), loses statement bodies, and still cannot do multiple returns —
+strictly worse than the head-only shape, whose body has *no escaping rules of any kind*. Head-only
+also leaves the trailing-return slot open, so `λ(s) -> decltype(auto) { return s.front(); }`
+composes instead of being baked in (and `decltype(auto)`-by-default would be a dangling footgun).
+
+**Named placeholders (`$x`, `$y`) — the adjacent idea, parked with a design.** If placeholders had
+*identity*, expressions could say what today needs λ: `$x * $x` is arity 1 with the argument used
+twice (the W-combinator gap — `_ * _` is two-input by the distinct-blank stance), and `$y < $x` is a
+reversed two-input comparator. One-letter bare names (`a`…`z`) are disqualified outright: they are
+the most-shadowed identifiers in C++, and a local `int x` would silently flip `x < _` from slot to
+capture. `$`-prefixed spellings dodge that entirely — `$x` lexes as ONE identifier (since `$` is an
+identifier character), nobody names locals `$x`, and the non-conformity lands on the `$` surface
+where it already lives, opt-in by include. Semantics that fall out cleanly: slot = symbol identity
+(not appearance order); arity = highest slot used (a `$y`-only closure is arity 2, first input
+ignored, as Boost.Lambda's `_2` was); mixing named and anonymous blanks in one expression should be
+ill-formed (two slot systems). Spelling fork: `$x/$y/$z` reads like math, `$1/$2/$3` states position
+and scales — the type-level notes already point at `$1`/`$2` as what the value-pack `pattern<>`
+machinery should eventually serve. Cost: `fn` must carry a slot mask and unify it under every
+operator section — a real extension of the composition machinery, which is why this is a recorded
+design and not an implementation. If it lands, λ's niche shrinks to statements — by construction the
+one place it cannot be replaced.
 
 ### The placeholder is always `_` (decision)
 

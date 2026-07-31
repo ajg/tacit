@@ -4,6 +4,7 @@
 #define TACIT_VERBS make_deposit, balance, is_frozen
 #include <tacit/$.hpp>
 #include <tacit/_.hpp>
+#include <tacit/λ.hpp>
 
 #include <any>
 #include <cassert>
@@ -180,6 +181,16 @@ int main() {
   assert($(sp).use_count() >= 1);
   assert(($<std::vector>(1, 2, 3)) == (std::vector{1, 2, 3}));
   assert(*($<std::set, _, std::greater<>>(3, 1, 2)).begin() == 3);
+
+  // --- λ ---
+  {
+    std::vector<std::string> lv{"ccc", "a", "bb"};
+    std::ranges::sort(lv, λ(a, b) { return a.size() < b.size(); });
+    assert(lv[0] == "a");
+    assert(std::ranges::count_if(lv, λ(s) { return s.size() * s.size() > 4u; }) == 1);
+    λ(s) -> decltype(auto) { return s.front(); }(lv[0]) = 'z';
+    assert(lv[0] == "z");
+  }
 
   // --- TACIT_VERBS ---
   Account account;

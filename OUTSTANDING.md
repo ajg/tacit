@@ -63,3 +63,22 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
 
 8. Named combinators (compose / fanout / first / second, currently behind `TACIT_COMBINATORS`) into a
    sub-namespace — still open, carried over from #4.
+
+9. ~~`λ.hpp`.~~ **DONE** — `<tacit/λ.hpp>`, completely standalone (includes nothing), conforming
+   (`λ` is a legal C++23 identifier per UAX #31, `-pedantic-errors`-clean, needs UTF-8 source). The
+   macro emits the lambda HEAD only — `λ(a, b)` == `[&](auto&& a, auto&& b)` — body in ordinary
+   braces, trailing-return slot open. The three impossibility results that fix the design (macro-only,
+   braces stay, `return` stays), and the parked named-placeholder idea (`$x`/`$y` or `$1`/`$2` —
+   NOT `a`..`z`, which shadow) are in `tacit_extras.md` under "λ: the lambda head".
+
+10. **OPEN — README reframing.** The README still pitches the library as point-free programming;
+    with `$` (eager wrapper/builder) canonical, λ (the lambda head), the type level, and the sigils,
+    it is more than that now. Reword the opening framing around the broader surface: one vocabulary,
+    several grammars — `_` for expressions, `$` for values, λ for statements.
+
+11. **OPEN — single-file distribution.** Decision pending (discussed, not settled): keep
+    `include/tacit/` as canonical source and add a generated, committed `single/` with standalone
+    `_.hpp` and `$.hpp` (core inlined behind a shared content guard so both coexist in one TU), a
+    ~30-line amalgamation script, and a CI regenerate-and-diff check. λ.hpp needs none of this (born
+    single-file); std_blanks stays repo-only. Modules are orthogonal — the `.cppm` GMFs always
+    resolve includes at interface-build time.

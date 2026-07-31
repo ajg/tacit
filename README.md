@@ -331,6 +331,29 @@ rejected under `-pedantic-errors` — so `<tacit/_.hpp>` alone stays strictly co
 sees the character. Everything `$` spells is reachable conformingly as `tacit::lift` and
 `tacit::make`; nothing is `$`-only, and a `-pedantic-errors` build simply keeps to those names.
 
+## λ — when you do need a lambda (opt-in)
+
+Some things the expression grammar cannot say: an argument used twice, statements, a name in a
+non-projection position. For those, `<tacit/λ.hpp>` sheds the ceremony a hand-written lambda drags
+in — the macro expands to exactly the head, `λ(a, b)` == `[&](auto&& a, auto&& b)`, and the body
+follows in ordinary braces:
+
+```cpp
+#include <tacit/λ.hpp>
+
+std::ranges::sort(v, λ(a, b) { return a.size() < b.size(); });
+std::ranges::count_if(v, λ(s) { return s.size() * s.size() > 4u; })  // s used twice: `_` can't
+λ(s) -> decltype(auto) { return s.front(); }                         // your own trailing return
+```
+
+Because the body never passes through the macro, it is plain C++ — commas, statements, multiple
+returns, no escaping rules. Capture is `[&]`. The header is **completely standalone** (it includes
+nothing, not even `_.hpp`) and, unlike `$`, fully conforming: `λ` is a legal C++23 identifier (UAX
+#31), so it survives `-pedantic-errors`; it only asks for UTF-8 source. One caveat has no cure:
+macros cannot cross a module boundary, so `#include <tacit/λ.hpp>` is the permanent vehicle — no
+`import` will ever carry it. Why λ can only be a macro at all, and why the `{ return … }` cannot be
+elided, is recorded in `tacit_extras.md`.
+
 ## Synthetic sigils (opt-in)
 
 `#define TACIT_COMBINATORIAL_OPERATORS` before including:

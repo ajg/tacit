@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: BSL-1.0
+#pragma once
+
+// λ — the lambda head, without the cruft:
+//
+//     λ(x) { return x * x; }                        // [&](auto&& x) { return x * x; }
+//     λ(a, b) { return a.size() < b.size(); }       // [&](auto&& a, auto&& b) { ... }
+//     λ() { return 42; }                            // [&]() { ... }
+//
+// The macro emits ONLY the head — capture and parameter list — and stops. The body follows in
+// ordinary braces, OUTSIDE the macro, so it is plain C++: commas, statements, multiple returns,
+// nested lambdas — no escaping rules of any kind. That is not a modest choice but the unique one: a
+// macro can only transform what is passed to it, so any shape that takes the body as an argument
+// inherits comma/parenthesization rules, and the head-only shape inherits none. The trailing-return
+// slot is deliberately left open — append your own when deduction is not what you mean:
+//
+//     λ(s) -> decltype(auto) { return s.front(); }  // reference-preserving, opt-in per site
+//
+// Capture is `[&]`, the right default for a lambda written at its point of use; one stored beyond
+// its scope dangles exactly as a hand-written `[&]` would. Parameters are `auto&&`; forwarding
+// inside the body (`std::forward<decltype(a)>(a)`) cannot be elided, because the body is not the
+// macro's to touch.
+//
+// This header is COMPLETELY standalone — it includes nothing and depends on nothing in tacit. It is
+// the complement of <tacit/_.hpp>, not an extension of it: `_` exists to eliminate the lambda for
+// the expression grammar it can capture (`_ * 2`, `_.size() < _.size()`); λ is for what that
+// grammar cannot say — a name used twice, statements, an argument in a non-projection position.
+// Why λ can only ever be a macro (and so can never cross a named-module `import`), and why the
+// residual `{ return ... }` cannot be elided, is recorded in tacit_extras.md.
+//
+// λ (U+03BB) is a CONFORMING identifier — C++23 identifiers follow UAX #31, and Greek is XID_Start
+// — so unlike `$` this header survives `-pedantic-errors`. It does require UTF-8 source encoding
+// (universal today; MSVC wants /utf-8). Including this header is the opt-in, and it claims exactly
+// one user-facing name: `λ`.
+//
+// The TACIT_LAMBDA_* helpers below must SURVIVE the include — λ expands at every use site, unlike
+// the generators <tacit/_.hpp> consumes and #undefs at include time — so they are part of the deal.
+// A comma-separated FOR_EACH (the one in <tacit/_.hpp> is semicolon-flavored, and cleaned up after
+// use besides), via the classic recursive-rescan trick; good far beyond any reasonable arity.
+#define TACIT_LAMBDA_PARENS ()
+#define TACIT_LAMBDA_EXPAND(...) TACIT_LAMBDA_E1(TACIT_LAMBDA_E1(TACIT_LAMBDA_E1(TACIT_LAMBDA_E1(__VA_ARGS__))))
+#define TACIT_LAMBDA_E1(...) TACIT_LAMBDA_E2(TACIT_LAMBDA_E2(TACIT_LAMBDA_E2(TACIT_LAMBDA_E2(__VA_ARGS__))))
+#define TACIT_LAMBDA_E2(...) __VA_ARGS__
+#define TACIT_LAMBDA_MAP(M, a, ...) M(a) __VA_OPT__(, TACIT_LAMBDA_MAP_AGAIN TACIT_LAMBDA_PARENS (M, __VA_ARGS__))
+#define TACIT_LAMBDA_MAP_AGAIN() TACIT_LAMBDA_MAP
+#define TACIT_LAMBDA_ARG(a) auto &&a
+
+#define λ(...) [&](__VA_OPT__(TACIT_LAMBDA_EXPAND(TACIT_LAMBDA_MAP(TACIT_LAMBDA_ARG, __VA_ARGS__))))
