@@ -55,8 +55,7 @@ Costs are measured and small; see [Costs, limits, coexistence](#costs-limits-coe
   and **EDG 6.9**, the front end behind Visual Studio's IntelliSense.
 - On MSVC, `/utf-8` and `/Zc:preprocessor` are required and not implied by `/std:c++latest` — the
   first for `λ.hpp`'s encoding, the second because the vocabulary's X-macro engine uses
-  `__VA_OPT__`. CMake users get both automatically. One gap: MSVC hasn't implemented C++23's
-  UCN/glyph identifier equivalence, so `λ` works there but its `\u{3BB}` spelling does not.
+  `__VA_OPT__`. CMake users get both automatically.
 - Optional **C++26 reflection (P2996)** unlocks the reflective members; auto-detected, otherwise
   compiled out. See [Reflective hatch](#reflective-hatch-c26).
 
