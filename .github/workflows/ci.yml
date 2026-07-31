@@ -30,21 +30,42 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-  msvc:
+  windows:
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        # v143 is MSVC's own front end; ClangCL is clang's, on the MSVC ABI and STL — what a lot of
+        # Windows codebases actually build with, and a different front end over the same library.
+        toolset: [v143, ClangCL]
     steps:
       - uses: actions/checkout@v5
       - name: Configure
-        run: cmake -B build
+        # The VS generator's -T selects the front end without needing a vcvars shell (Ninja + cl
+        # would want one, i.e. a third-party action — not worth the supply-chain surface here).
+        run: cmake -B build -T ${{ matrix.toolset }}
       - name: Build
-        # Debug on purpose: the Visual Studio generator is multi-config, and Release's NDEBUG
-        # would vaporize every assert, passing the suite vacuously.
+        # Debug on purpose: the VS generator is multi-config, and Release's NDEBUG would vaporize
+        # every assert, passing the suite vacuously.
         run: cmake --build build --config Debug --parallel
       - name: Test
         # --timeout: a failing Debug assert on Windows pops a MODAL DIALOG and the runner then
         # waits out the whole job (25 minutes, observed). The timeout turns that hang into a
         # prompt failure.
         run: ctest --test-dir build -C Debug --output-on-failure --timeout 60
+
+  macos:
+    # AppleClang against Apple's libc++ — a third standard library, and the one that hard-bans
+    # specializing std::tuple (libc++ 21+), which the experimental std-blanks header feature-tests.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: cmake -B build
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --timeout 60
 
   modules:
     runs-on: ubuntu-24.04
