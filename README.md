@@ -1,6 +1,7 @@
 # tacit
 
 [![ci](https://github.com/ajg/tacit/actions/workflows/ci.yml/badge.svg)](https://github.com/ajg/tacit/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-BSL--1.0-blue.svg)](LICENSE)
 
 > **Status: experimental, pre-1.0.** The API may change, and it isn't released or announced yet.
 
