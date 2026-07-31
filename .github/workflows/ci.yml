@@ -30,6 +30,21 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  msvc:
+    # Experimental until first green, then promoted to blocking (drop continue-on-error).
+    runs-on: windows-2022
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: cmake -B build
+      - name: Build
+        # Debug on purpose: the Visual Studio generator is multi-config, and Release's NDEBUG
+        # would vaporize every assert, passing the suite vacuously.
+        run: cmake --build build --config Debug --parallel
+      - name: Test
+        run: ctest --test-dir build -C Debug --output-on-failure
+
   modules:
     runs-on: ubuntu-24.04
     steps:
