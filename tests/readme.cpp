@@ -59,7 +59,7 @@ int main() {
   assert(_(_)([](int x) { return x + 1; }, 4) == 5);
   _.push_back(_.size())(c, words);            // projected blank
   assert(c.back() == 4);                      // words.size()
-  assert((_.size() < _)(words, std::size_t{3}));
+  assert((_.size() < _)(words, std::size_t{5}));
   assert(_.substr(_)(std::string("abcd"), std::size_t{2}) == "cd");
 
   // --- Vocabulary: get ---
