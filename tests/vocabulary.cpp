@@ -161,7 +161,8 @@ int main() {
     static_assert(std::is_same_v<_::key_equal::of<std::unordered_map<int, int>>, std::equal_to<int>>);
     static_assert(
         std::is_same_v<_::iterator_category::of<std::vector<int>::iterator>, std::random_access_iterator_tag>);
-    static_assert(std::is_same_v<_::string_type::of<std::filesystem::path>, std::string>);
+    static_assert(std::is_same_v<_::string_type::of<std::filesystem::path>,
+                                 std::filesystem::path::string_type>); // wstring on Windows
     static_assert(std::is_same_v<_::pos_type::of<std::char_traits<char>>, std::streampos>);
     static_assert(std::is_same_v<_::node_type::of<std::map<int, int>>, std::map<int, int>::node_type>);
     static_assert(std::is_same_v<_::id::of<std::thread>, std::thread::id>);
