@@ -351,7 +351,7 @@ elided, is recorded in `tacit_extras.md`.
 
 ## Synthetic sigils (opt-in)
 
-`#define TACIT_COMBINATORIAL_OPERATORS` before including:
+`#define TACIT_SIGILS` before including:
 
 ```cpp
 f >>* g     // compose, left to right   x -> g(f(x))

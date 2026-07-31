@@ -26,7 +26,7 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
    collide with the field-style names, and the runtime `_.subspan(o, n)` already covers it);
    `variant::emplace<T>(a...)` (would be ambiguous with the existing runtime `emplace`).
 
-4. ~~Synthetic sigil operators.~~ **DONE (opt-in: `TACIT_COMBINATORIAL_OPERATORS`)** — `>>*` compose
+4. ~~Synthetic sigil operators.~~ **DONE (opt-in: `TACIT_SIGILS`, né `TACIT_COMBINATORIAL_OPERATORS`)** — `>>*` compose
    left-to-right, `<<*` compose right-to-left, `&&&` fanout, `***` product. Exhaustive sweep in
    `tacit_extras.md`: 7194 candidates, 615 stolen by maximal munch, 368 of the 391 practical ones
    compile. Haskell's `&&&`/`***`/`+++` survive C++'s lexer; `|||`/`>>>`/`<<<` do not, so compose is

@@ -824,7 +824,7 @@ unclaimed operator" — but that was exactly the argument against: being a real 
 real meaning, member-pointer projection, which the library now provides ungated. A sigil must be
 synthetic; an operator should mean what it means.)
 
-**What shipped** (behind `TACIT_COMBINATORIAL_OPERATORS`): `>>*` compose left-to-right, `<<*` compose
+**What shipped** (behind `TACIT_SIGILS`): `>>*` compose left-to-right, `<<*` compose
 right-to-left, `&&&` fanout, `***` product.
 
 **The mechanism, and its one cost.** Both halves of every sigil are already spoken for: `f && g` is

@@ -151,7 +151,7 @@ struct nochain {};
 // comparator), not a projected blank, which only a one-fill closure can be.
 struct nary {};
 template <class> constexpr bool is_fn_v = false;
-#ifdef TACIT_COMBINATORIAL_OPERATORS
+#ifdef TACIT_SIGILS
 // The synthetic-sigil markers (see "SYNTHETIC SIGILS" below, after `fn` is complete — `marked`
 // derives from it). Declared here because the unary sections above build them.
 struct amp_tag;
@@ -161,7 +161,7 @@ template <class Tag, class G, class F> [[nodiscard]] constexpr auto mark(G inner
 #endif
 template <class, class = nochain> struct fn;
 template <class F, class L> constexpr bool is_fn_v<fn<F, L>> = true;
-#ifdef TACIT_COMBINATORIAL_OPERATORS
+#ifdef TACIT_SIGILS
 // A marked closure IS an `fn` — it derives from one — so every `not_fn` constraint in the header
 // must see it that way. Saying so is also what keeps the sigil overloads unambiguous: without it the
 // ordinary `fn op value` sections claim a marked right operand as a plain bound value, and the two
@@ -527,12 +527,12 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
 //  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
 //  differ by arity. `&_` builds `x -> &x`, not the placeholder's address (use std::addressof if ever
 //  needed); overloading unary `&` is the one to keep in mind.
-//  How a unary section wraps its lambda. Plain by default; under TACIT_COMBINATORIAL_OPERATORS the
+//  How a unary section wraps its lambda. Plain by default; under TACIT_SIGILS the
 //  `&` and `*` forms produce a TAGGED closure instead — one that still IS an `fn` (it derives), so
 //  `(&_)(c) == &c` and `(*_) + 1` are unchanged, but which the synthetic sigils can dispatch on.
 #define TACIT_PLAIN(L) tacit::detail::fn{L}
 #define TACIT_MARK_INNER tacit_mark_inner_
-#ifdef TACIT_COMBINATORIAL_OPERATORS
+#ifdef TACIT_SIGILS
 #define TACIT_MARK_AMP(L) tacit::detail::mark<tacit::detail::amp_tag>(TACIT_MARK_INNER, L)
 #define TACIT_MARK_STAR(L) tacit::detail::mark<tacit::detail::star_tag>(TACIT_MARK_INNER, L)
 #else
@@ -1175,7 +1175,7 @@ template <class F, class Last> struct fn {
 template <class F> fn(F) -> fn<F, nochain>;
 
 // ------------------------------------------------------------------------------------------------
-// SYNTHETIC SIGILS (opt-in: `#define TACIT_COMBINATORIAL_OPERATORS`).
+// SYNTHETIC SIGILS (opt-in: `#define TACIT_SIGILS`).
 //
 //     f >>* g      compose, left to right   x -> g(f(x))
 //     f <<* g      compose, right to left   x -> f(g(x))
@@ -1213,7 +1213,7 @@ template <class F> fn(F) -> fn<F, nochain>;
 // expression). Composition is therefore the mirrored pair `>>*` / `<<*`: both directions from the
 // one `*` marker already paid for, arrows pointing the way the data flows. (`->*` is deliberately
 // NOT here — it is a real operator with a real job, the ungated member-pointer projection above.)
-#ifdef TACIT_COMBINATORIAL_OPERATORS
+#ifdef TACIT_SIGILS
 struct amp_tag {};   // from unary `&` — the fanout half of `&&&`
 struct star_tag {};  // from unary `*` — the compose half of `<<*`
 struct star2_tag {}; // from `**`      — the product half of `***`
@@ -1285,7 +1285,7 @@ template <closure_like L, class F, class G>
       }(std::forward<X>(x)...);
   }};
 }
-#endif // TACIT_COMBINATORIAL_OPERATORS
+#endif // TACIT_SIGILS
 template <class F, class L> fn(F, L) -> fn<F, L>;
 
 // The comma section proper (declared above) — its vocabulary needs the tables, like `fn`'s.

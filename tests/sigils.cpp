@@ -1,4 +1,4 @@
-// Synthetic sigils, behind `TACIT_COMBINATORIAL_OPERATORS`.
+// Synthetic sigils, behind `TACIT_SIGILS`.
 //
 //     f >>* g      compose, left to right   x -> g(f(x))
 //     f <<* g      compose, right to left   x -> f(g(x))
@@ -11,7 +11,7 @@
 // closure are UNCHANGED (the marker derives from `fn`), and the cost is one reading per sigil —
 // `f && (&g)`, `f << (*g)`, `f >> (*g)`, `f * (**g)`, closure against marked closure — none of
 // which anybody writes.
-#define TACIT_COMBINATORIAL_OPERATORS
+#define TACIT_SIGILS
 #include <tacit/_.hpp>
 
 #include <algorithm>
