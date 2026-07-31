@@ -37,11 +37,10 @@
 // (universal today; MSVC wants /utf-8). Including this header is the opt-in, and it claims exactly
 // one user-facing name: `λ`.
 //
-// No λ key, or an ASCII-only source policy? `\u03BB(x)` and (C++23) `\u{3BB}(x)` are THE SAME
-// identifier as `λ(x)` — universal-character-names in identifiers are equivalent to the character
-// they name, macro replacement included — so both invoke this macro, conformingly, from pure ASCII.
-// (Conformingly — but MSVC has not implemented that equivalence (C++23 P2314): there the glyph
-// works and the UCN spellings do not.)
+// (Input-method aside, not a feature: on clang/GCC, `\u03BB(x)` is the same identifier as `λ(x)` —
+// UCN/glyph equivalence, C++23 P2314 — which is just enough to type the macro before your editor
+// learns to produce the glyph. MSVC has not implemented the equivalence. Details in
+// tacit_extras.md.)
 //
 // The objection to preempt is not conformance but COLLISION: λ may be the most-used Greek
 // identifier in numeric C++ (wavelength, eigenvalue, Poisson rate), macros ignore namespaces, and
