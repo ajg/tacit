@@ -5,9 +5,10 @@ The decision ledger: what was done, what was declined, and why — newest at the
 when it exists, lives here too until it resolves; right now everything is settled. (Public asks —
 the things we *couldn't* do — are in ASKS.md.)
 
-Repo state: private, v0.4.0 tagged, pre-announcement fixes landed (#12). CI matrix: clang++-18/22,
-g++-13/16, modules (clang, with strict-consumer and strict-interface legs), packaging (with the
-single/ freshness gate). 27 ctest targets. The
+Repo state: private, v0.5.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
+AppleClang, plus modules (clang, with strict-consumer and strict-interface legs) and packaging
+(with the single/ freshness gate). 29 ctest targets; Intel ICX and EDG spot-checked via Compiler
+Explorer. The
 `typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`,
 so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS`.
 
