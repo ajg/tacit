@@ -555,6 +555,12 @@ It prints which compiler it actually used, and skips (rather than silently drops
 platform can't run. On aarch64-darwin the shell substitutes the nearest working clang and says so;
 `shell.nix` documents each substitution and why.
 
+## Asks
+
+Some things we wanted, we could not get — a same-`_` type level (`_<>`), a conforming `$`, stateless
+*composed* closures, MSVC reports — and a few we believe we've proven impossible. Both kinds are
+listed in [ASKS.md](ASKS.md): solve one, or break a proof, and it's yours.
+
 ## License
 
 Boost Software License 1.0 — see [LICENSE](LICENSE). Chosen for header-only friendliness: the notice
