@@ -354,11 +354,12 @@ at all.
 
 ### The conforming spellings: `lift` and `make`
 
-`$` has its own header because it is not an identifier in standard C++ — a GCC/Clang extension,
-rejected under `-pedantic-errors` — so `<tacit/_.hpp>` alone stays strictly conforming and never
-sees the character. The same two functions exist there under conforming names: `tacit::lift(x)` is
-`$(x)`, and `tacit::make<F>(a…)` is `$<F>(a…)`. Nothing is `$`-only; a strict build simply keeps to
-those names.
+`$` is accepted by every major compiler — clang, GCC, and MSVC alike — it just sits outside the
+standard's identifier grammar, so a maximum-strictness build (`-pedantic-errors`) rejects the
+character at the lexer. Hence the separate header, and synonyms that satisfy even that flag:
+`<tacit/_.hpp>` alone never sees a `$`, and the same two functions exist there as `tacit::lift(x)`
+== `$(x)` and `tacit::make<F>(a…)` == `$<F>(a…)`. Nothing is `$`-only; the strictest build simply
+keeps to these names.
 
 ```cpp
 lift(v).size()                              // == $(v).size()
@@ -384,8 +385,8 @@ Because the body never passes through the macro, it is plain C++ — commas, sta
 returns, no escaping rules. Capture is `[&]` — right for a lambda used where it's written; don't
 store one beyond its scope. No λ key? `\u{3BB}(x)` is the same identifier —
 UCNs are equivalent to the character they name, macros included — so λ works from pure ASCII source. The header is **completely standalone** (it includes
-nothing, not even `_.hpp`) and, unlike `$`, fully conforming: `λ` is a legal C++23 identifier (UAX
-#31), so it survives `-pedantic-errors`; it only asks for UTF-8 source. One caveat has no cure:
+nothing, not even `_.hpp`) and fully conforming: `λ` is a legal C++23 identifier (UAX #31), so it
+survives even `-pedantic-errors`; it only asks for UTF-8 source. One caveat has no cure:
 macros cannot cross a module boundary, so `#include <tacit/λ.hpp>` is the permanent vehicle — no
 `import` will ever carry it. Why λ can only be a macro at all, and why the `{ return … }` cannot be
 elided, is recorded in `tacit_extras.md`.
