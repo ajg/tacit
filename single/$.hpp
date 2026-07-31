@@ -662,6 +662,10 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
 #define TACIT_CORE(Self)                                                                                               \
   using self = Self;                                                                                                   \
   static constexpr bool is_tacit_placeholder = true;                                                                   \
+  /* defaulted explicitly: `operator=(self)` below is a user-provided copy assignment, which would                     \
+     otherwise DEPRECATE the implicit copy constructor (-Wdeprecated-copy-with-user-provided-copy) */                  \
+  constexpr Self() = default;                                                                                          \
+  constexpr Self(Self const&) = default;                                                                               \
   TACIT_COMPARE(==) TACIT_COMPARE(!=) TACIT_COMPARE(<) TACIT_COMPARE(>)                                                \
   TACIT_COMPARE(<=) TACIT_COMPARE(>=) TACIT_SECTION(+) TACIT_SECTION(-)                                                \
   TACIT_SECTION(*) TACIT_SECTION(/) TACIT_SECTION(%) TACIT_SECTION(^)                                                  \
@@ -1217,6 +1221,7 @@ template <class F, class Last> struct fn {
 #undef TACIT_NOUN
 #endif
 #undef TACIT_FN_FREE1
+#undef TACIT_FN_TFREE1
   // Range-adaptor verbs compose through the projection, so a pipeline keeps chaining (opt-in).
 #ifdef TACIT_VIEWS
 #define TACIT_FN_VIEW(NAME, ADAPT)                                                                                     \
@@ -2111,6 +2116,7 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 #undef TACIT_FREE1
 #undef TACIT_STD_FREES
 #undef TACIT_SECTION
+#undef TACIT_COMPARE
 #undef TACIT_MEMPTR
 #undef TACIT_UNARY
 #undef TACIT_UNARY_POST

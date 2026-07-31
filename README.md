@@ -450,8 +450,9 @@ provides, for names not in a table:
 - `_.enum_name()` — enumerator → `string_view`;
 - `_.each_field(f)` — fold `f` over a value's data members.
 
-These are compiled out otherwise. `TACIT_HAS_REFLECTION` (the one macro kept on the clean include
-path) lets you `#if` on whether they exist.
+These are compiled out otherwise. `TACIT_HAS_REFLECTION` — one of the two feature flags kept on the
+clean include path, beside `TACIT_HAS_RANGES_TO` and the `TACIT_VERSION` numbers — lets you `#if` on
+whether they exist.
 
 ## Modules
 
