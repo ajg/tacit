@@ -145,9 +145,10 @@ and a comparison applied to one rewrites itself into the conjunction the notatio
 
 The middle term is evaluated once per link (so keep a projection cheap and pure) and `&&`
 short-circuits, exactly as in the spelled-out form. Only those six operators build a chain; any other
-operator ends it. One gotcha: `(_ < 10) == false` chains too — it reads as
-`(x < 10) && (10 == false)`, not `x >= 10`; spell that one `_ >= 10`. `_ < _` is unaffected: with two
-blanks it's the two-input comparator, not a link.
+operator ends it. The one spelling that *looks* like negation, `(_ < 10) == false`, would chain into
+`(x < 10) && (10 == false)` — an always-false closure — so it is **rejected at compile time** with a
+message pointing at `_ >= 10` (or `!`). `_ < _` is unaffected: with two blanks it's the two-input
+comparator, not a link.
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` bind the argument by
 reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an ordinary section

@@ -109,7 +109,8 @@ int main() {
   assert(!(0 < _ < 10)(10));
   assert((1u <= _.size() < 4u)(std::string("ab")));
   assert((0 <= _ <= 10 < 20)(10));
-  assert(!((_ < 10) == false)(5));            // documented gotcha: chains, not negation
+  // `(_ < 10) == false` is a compile error by design (a bool-folded chain, static_assert with the
+  // fix in the message) — negative-compile, so exercised by inspection rather than a runtime assert.
   assert((_ < _)(1, 2));                      // two blanks: comparator, not a link
 
   std::vector<int> mv{1, 2, 3};

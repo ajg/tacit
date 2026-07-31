@@ -140,6 +140,16 @@ int main() {
     assert(_.get()(p) == p.get()); // the smart pointer's own member still via dot
   }
 
+  // ---- a non-copyable RVALUE left operand is a compile error (regression: it used to bind by
+  // reference and dangle silently) — `std::ostringstream{} << _` now static_asserts with "name it
+  // first". Negative-compile, so pinned by inspection; the lvalue path stays by-reference: ----
+  {
+    std::ostringstream named;
+    auto sink = (named << _);
+    sink(42);
+    assert(named.str() == "42");
+  }
+
   // ---- operator->* : member-pointer projection, the `.*` gap-filler ----
   // Native `->*` where the operand has one (raw pointer), deref-then-select where it does not
   // (smart pointer, iterator) — data members only; member functions stay with `_->f(args)`.

@@ -280,7 +280,10 @@ template <class Invoke, class... Bound> struct section {
           [&](auto &&...args) -> decltype(auto) {
             return invoke(std::forward<X>(x), std::forward<decltype(args)>(args)...);
           },
-          std::tuple_cat(map::template pick<Is>(bound, fills)...));
+          // `move(fills)` so `pick`'s std::get yields F&& rather than collapsing to an lvalue —
+          // fills ARE perfect-forwarded, and passing the moved tuple to every pick is sound because
+          // each fill feeds exactly ONE slot (slots_before(I) is distinct per slot).
+          std::tuple_cat(map::template pick<Is>(bound, std::move(fills))...));
     }(std::make_index_sequence<map::arity>{});
   }
 };
@@ -478,9 +481,15 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
     if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                                \
       return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                                    \
                { return x op std::forward<decltype(y)>(y); }};                                                         \
-    else /* non-copyable left operand (e.g. a stream): bind by reference so `os << _` works */                         \
+    else { /* non-copyable LVALUE (e.g. a stream): bind by reference so `os << _` works. A                             \
+              non-copyable RVALUE is REJECTED — binding a dying temporary by reference would hand                      \
+              back a silently dangling closure. */                                                                     \
+      static_assert(std::is_lvalue_reference_v<X>,                                                                     \
+                    "binding a non-copyable temporary would dangle: name it first "                                    \
+                    "(e.g. `std::ostringstream os; auto f = os << _;`)");                                              \
       return tacit::detail::fn{[&x](auto&& y) -> decltype(auto)                                                        \
                { return x op std::forward<decltype(y)>(y); }};                                                         \
+    }                                                                                                                  \
   }                                                                                                                    \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                                        \
     return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                                                  \
@@ -502,9 +511,12 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
     if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                                \
       return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                                    \
                { return x op std::forward<decltype(y)>(y); }, tacit::detail::same{}};                                  \
-    else /* non-copyable left operand: bind by reference, as TACIT_SECTION does */                                     \
+    else { /* non-copyable lvalue: by reference; non-copyable rvalue: rejected, as TACIT_SECTION */                    \
+      static_assert(std::is_lvalue_reference_v<X>,                                                                     \
+                    "binding a non-copyable temporary would dangle: name it first");                                   \
       return tacit::detail::fn{[&x](auto&& y) -> decltype(auto)                                                        \
                { return x op std::forward<decltype(y)>(y); }, tacit::detail::same{}};                                  \
+    }                                                                                                                  \
   }                                                                                                                    \
   [[nodiscard]] friend constexpr auto operator op(self, self) {                                                        \
     return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                                                  \
@@ -951,13 +963,16 @@ template <class F, class Last> struct fn {
     if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                                       \
       return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
         return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};                            \
-    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                           \
+    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                            \
       return tacit::detail::fn{                                                                                        \
           [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                                                 \
             return x op g(std::forward<decltype(y)>(y)...); }};                                                        \
-    else /* non-copyable (stream): bind by reference, e.g. cout << _.size() */                                         \
+    else { /* non-copyable LVALUE (stream): by reference, e.g. cout << _.size(); rvalues: rejected */                  \
+      static_assert(std::is_lvalue_reference_v<X>,                                                                     \
+                    "binding a non-copyable temporary would dangle: name it first");                                   \
       return tacit::detail::fn{                                                                                        \
           [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }};                 \
+    }                                                                                                                  \
   }                                                                                                                    \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {                      \
     return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                                            \
@@ -999,12 +1014,19 @@ template <class F, class Last> struct fn {
     if constexpr (is_blank_v<Y>) /* `g op _` is the two-input comparator, like `_ op _` */                             \
       return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
         return g(std::forward<decltype(a)>(a)) op std::forward<decltype(b)>(b); }, nary{}};                            \
-    else if constexpr (fn::chained) /* `(… op0 m) op y` == `(… op0 m) && (m op y)` */                                  \
+    else if constexpr (fn::chained) { /* `(… op0 m) op y` == `(… op0 m) && (m op y)` */                                \
+      /* Folding against a bool is never what the spelling means: `(_ < 10) == false` would become                     \
+         `(x < 10) && (10 == false)` — an ALWAYS-FALSE closure, when the writer meant negation.                        \
+         Rejected here rather than documented as a gotcha; the fix is spelled in the message. */                       \
+      static_assert(!std::is_same_v<std::remove_cvref_t<Y>, bool>,                                                     \
+                    "a comparison chain folded against a bool: `(_ < 10) == false` means "                             \
+                    "`(x < 10) && (10 == false)`, not negation — write `_ >= 10`, or negate with `!`");                \
       return tacit::detail::fn{[g, y](auto &&...x) -> bool {                                                           \
                                  return static_cast<bool>(g(x...)) &&                                                  \
                                         static_cast<bool>(g.last(x...) op y);                                          \
                                },                                                                                      \
                                tacit::detail::always{y}};                                                              \
+    }                                                                                                                  \
     else /* first link: unchanged behaviour, plus the state a following comparison folds against */                    \
       return tacit::detail::fn{                                                                                        \
           [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; },                   \
@@ -1014,13 +1036,16 @@ template <class F, class Last> struct fn {
     if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                                       \
       return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
         return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};                            \
-    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                           \
+    else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                            \
       return tacit::detail::fn{                                                                                        \
           [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                                                 \
             return x op g(std::forward<decltype(y)>(y)...); }, g}; /* rightmost operand: g */                          \
-    else /* non-copyable (stream): bind by reference */                                                                \
+    else { /* non-copyable LVALUE (stream): by reference; rvalues: rejected */                                         \
+      static_assert(std::is_lvalue_reference_v<X>,                                                                     \
+                    "binding a non-copyable temporary would dangle: name it first");                                   \
       return tacit::detail::fn{                                                                                        \
           [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }, g};              \
+    }                                                                                                                  \
   }                                                                                                                    \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {                      \
     return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                                            \
@@ -1306,8 +1331,9 @@ template <class... Ops> struct comma_section {
   [[nodiscard]] constexpr auto operator()(F &&...f) const {
     auto fills = std::forward_as_tuple(std::forward<F>(f)...);
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+      // `move(fills)`: same forwarding rule as `section::operator()` — one fill, one slot.
       return std::apply([](auto &&...xs) { return build(std::forward<decltype(xs)>(xs)...); },
-                        std::tuple_cat(map::template pick<Is>(ops, fills)...));
+                        std::tuple_cat(map::template pick<Is>(ops, std::move(fills))...));
     }(std::make_index_sequence<map::arity>{});
   }
 
