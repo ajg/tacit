@@ -38,10 +38,17 @@ int main() {
   }
 
   // ---- and it costs exactly what std::greater<> costs: nothing ----
+  // The library's guarantee is that the closure TYPE is empty (asserted above, and it holds on
+  // every front end). Whether a container then applies empty-base optimization is the standard
+  // library's business: clang-cl does not treat a class whose emptiness comes from
+  // [[msvc::no_unique_address]] members as EBO-eligible, so the MSVC STL cannot compress it there
+  // — even though it compresses a plain empty comparator fine. MSVC's own front end does.
+#if !(defined(_MSC_VER) && defined(__clang__))
   {
     static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int, std::greater<>>));
     static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));
   }
+#endif
 
   // ---- through `make`, where the deduced element meets the closure comparator ----
   {

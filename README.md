@@ -346,8 +346,13 @@ what a comparator or hasher template parameter wants. `decltype` is the whole cr
 std::set<int, decltype(_ > _)> s{3, 1, 2};   // descending — *s.begin() == 3
 $<std::set, _, decltype(_ > _)>(3, 1, 2);    // deduce the element, order by `>`
 static_assert(sizeof(std::set<int, decltype(_ > _)>)
-              == sizeof(std::set<int>));     // costs nothing
+              == sizeof(std::set<int>));     // costs nothing*
 ```
+
+\* The closure type is empty everywhere; whether a container then *compresses* it is the standard
+library's call. One known exception: clang-cl won't apply empty-base optimization to a class whose
+emptiness comes from `[[msvc::no_unique_address]]`, so on that one front end
+`std::set<int, decltype(_ > _)>` is a pointer-width larger. MSVC's own front end compresses it.
 
 Binding a *value* correctly forfeits this — `decltype(_ > 3)` is not default-constructible, because
 it has to keep the 3. A **composed** closure (`_.size() < _.size()`) isn't stateless today either:

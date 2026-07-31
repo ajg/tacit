@@ -183,7 +183,9 @@ int main() {
   std::set<int, decltype(_ > _)> s{3, 1, 2};
   assert(*s.begin() == 3);
   assert(*($<std::set, _, decltype(_ > _)>(3, 1, 2)).begin() == 3);
+#if !(defined(_MSC_VER) && defined(__clang__)) // clang-cl: see tests/stateless.cpp
   static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));
+#endif
 
   // --- lift and make: the conforming spellings ---
   assert(lift(std::vector{1, 2}).size() == $(std::vector{1, 2}).size());
