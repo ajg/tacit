@@ -37,6 +37,14 @@
 // identifier as `λ(x)` — universal-character-names in identifiers are equivalent to the character
 // they name, macro replacement included — so both invoke this macro, conformingly, from pure ASCII.
 //
+// The objection to preempt is not conformance but COLLISION: λ may be the most-used Greek
+// identifier in numeric C++ (wavelength, eigenvalue, Poisson rate), macros ignore namespaces, and
+// the UCN equivalence above means even a UCN-spelled identifier expands. Two things keep the blast
+// radius small. This is a FUNCTION-LIKE macro, so object uses survive untouched —
+// `double λ = 500e-9;` compiles and means what it says; only call syntax collides (`λ(x)` as a
+// real function call, or paren-init `double λ(2.0);` — spell that one `= 2.0` or `{2.0}`). And it
+// is opt-in by include — which is also why no umbrella header may ever include this one.
+//
 // The TACIT_LAMBDA_* helpers below must SURVIVE the include — λ expands at every use site, unlike
 // the generators <tacit/_.hpp> consumes and #undefs at include time — so they are part of the deal.
 // A comma-separated FOR_EACH (the one in <tacit/_.hpp> is semicolon-flavored, and cleaned up after

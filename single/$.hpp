@@ -426,8 +426,10 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
           std::forward<A>(a)...);                                                                                      \
     else                                                                                                               \
       return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                          \
-               requires requires(X&& xx, A&&... aa) {                                                                  \
-                 std::forward<X>(xx).NAME(std::forward<A>(aa)...);                                                     \
+               /* the guard mirrors the BODY's call — captured args are const lvalues by then,                        \
+                  so testing the original value categories would pass calls the body cannot make */                    \
+               requires requires(X&& xx, std::decay_t<A> const&... aa) {                                               \
+                 std::forward<X>(xx).NAME(aa...);                                                                      \
                } { return std::forward<X>(x).NAME(a...); }};                                                           \
   }                                                                                                                    \
   static_assert(true)
@@ -440,8 +442,8 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
     requires(!(tacit::detail::is_blank_v<A> || ...))                                                                   \
   [[nodiscard]] static constexpr auto NAME(A&&... a) {                                                                 \
     return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                            \
-             requires requires(X&& xx, A&&... aa) {                                                                    \
-               std::forward<X>(xx)->NAME(std::forward<A>(aa)...);                                                      \
+             requires requires(X&& xx, std::decay_t<A> const&... aa) { /* guard == body, as TACIT_MEMBER */            \
+               std::forward<X>(xx)->NAME(aa...);                                                                       \
              } { return std::forward<X>(x)->NAME(a...); }};                                                            \
   }                                                                                                                    \
   static_assert(true)
@@ -455,8 +457,8 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
 #define TACIT_VIEW(NAME, ADAPT)                                                                                        \
   template <class... A> [[nodiscard]] static constexpr auto NAME(A&&... a) {                                           \
     return tacit::detail::fn{[... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                            \
-             requires requires(X&& xx, A&&... aa) {                                                                    \
-               std::views::ADAPT(std::forward<X>(xx), std::forward<A>(aa)...);                                         \
+             requires requires(X&& xx, std::decay_t<A> const&... aa) { /* guard == body */                             \
+               std::views::ADAPT(std::forward<X>(xx), aa...);                                                          \
              } { return std::views::ADAPT(std::forward<X>(x), a...); }};                                               \
   }
 
@@ -702,7 +704,8 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
     return tacit::detail::make_comma(a, b);                                                                            \
   }                                                                                                                    \
   [[nodiscard]] static constexpr auto operator()() {                                                                   \
-    return [](auto&& x) -> decltype(auto) { return std::invoke(std::forward<decltype(x)>(x)); };                       \
+    return tacit::detail::fn{                                                                                          \
+        [](auto&& x) -> decltype(auto) { return std::invoke(std::forward<decltype(x)>(x)); }};                         \
   }                                                                                                                    \
   template <class... Y>                                                                                                \
   [[nodiscard]] static constexpr auto operator()(Y&&... ys) {                                                          \
@@ -712,10 +715,10 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
             { return std::invoke(std::forward<decltype(f)>(f),                                                         \
                                  std::forward<decltype(as)>(as)...); },                                                \
           std::forward<Y>(ys)...);                                                                                     \
-    else                                                                                                               \
-      return [... ys = std::forward<Y>(ys)](auto&& x, auto&&... zs) -> decltype(auto) {                                \
+    else /* an fn like every other builder, so `_(a)` composes and projects — not a bare lambda */                    \
+      return tacit::detail::fn{[... ys = std::forward<Y>(ys)](auto&& x, auto&&... zs) -> decltype(auto) {              \
         return std::invoke(std::forward<decltype(x)>(x), ys..., std::forward<decltype(zs)>(zs)...);                    \
-      };                                                                                                               \
+      }};                                                                                                              \
   }                                                                                                                    \
   /* `_.get<0>()` and `_.get<int>()` — tuple-like projection. Overloaded on parameter KIND, so the                     \
      index and type forms share the name; both return an `fn`, so they compose like any other verb                     \
@@ -1120,8 +1123,8 @@ template <class F, class Last> struct fn {
   [[nodiscard]] constexpr auto NAME(A &&...a) const {                                                                  \
     return tacit::detail::fn{                                                                                          \
         [g = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)                                \
-          requires requires(X &&...xx, A &&...aa) {                                                                    \
-            std::declval<fn const &>()(std::forward<X>(xx)...).NAME(std::forward<A>(aa)...);                           \
+          requires requires(X &&...xx, std::decay_t<A> const &...aa) { /* guard == body */                             \
+            std::declval<fn const &>()(std::forward<X>(xx)...).NAME(aa...);                                            \
           } { return g(std::forward<X>(x)...).NAME(a...); }};                                                          \
   }                                                                                                                    \
   static_assert(true)
@@ -1213,9 +1216,8 @@ template <class F, class Last> struct fn {
   template <class... A> [[nodiscard]] constexpr auto NAME(A&&... a) const {                                            \
     return tacit::detail::fn{                                                                                          \
         [g = *this, ... a = std::forward<A>(a)]<class X>(X&& x) -> decltype(auto)                                      \
-          requires requires(X&& xx, A&&... aa) {                                                                       \
-            std::views::ADAPT(std::declval<fn const&>()(std::forward<X>(xx)),                                          \
-                              std::forward<A>(aa)...);                                                                 \
+          requires requires(X&& xx, std::decay_t<A> const&... aa) { /* guard == body */                                \
+            std::views::ADAPT(std::declval<fn const&>()(std::forward<X>(xx)), aa...);                                  \
           } { return std::views::ADAPT(g(std::forward<X>(x)), a...); }};                                               \
   }
   TACIT_VIEW_VERBS(TACIT_FN_VIEW)
@@ -1381,9 +1383,8 @@ template <class... Ops> struct comma_section {
   [[nodiscard]] constexpr auto NAME(A &&...a) const {                                                                  \
     return tacit::detail::fn{                                                                                          \
         [c = *this, ... a = std::forward<A>(a)]<class... X>(X &&...x) -> decltype(auto)                                \
-          requires requires(X &&...xx, A &&...aa) {                                                                    \
-            std::declval<comma_section const &>()(std::forward<X>(xx)...)                                              \
-                .NAME(std::forward<A>(aa)...);                                                                         \
+          requires requires(X &&...xx, std::decay_t<A> const &...aa) { /* guard == body */                             \
+            std::declval<comma_section const &>()(std::forward<X>(xx)...).NAME(aa...);                                 \
           } { return c(std::forward<X>(x)...).NAME(a...); }};                                                          \
   }                                                                                                                    \
   static_assert(true)
