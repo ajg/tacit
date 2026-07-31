@@ -33,13 +33,12 @@ adjacent language). We would happily co-author that paper.
 
 ## 3. Toolchains beyond the three
 
-MSVC is now CI-covered (it earned its keep immediately: it ignores `[[no_unique_address]]`, which
-had quietly broken the stateless-comparator guarantee there). Still unprobed, in rough order of
-how much we'd like to know: **clang-cl** (clang front end, MSVC ABI — what many Windows shops
-actually use), **AppleClang** (its libc++ is the one that hard-bans specializing `std::tuple`),
-**EDG** (the front end behind Visual Studio's IntelliSense — "compiles on EDG" means no red
-squiggles), **Intel ICX**, and anything embedded. A green report is useful; a red one with the
-error text is better.
+CI now covers clang, GCC, MSVC, clang-cl, and AppleClang; Intel ICX and EDG are spot-checked green
+via Compiler Explorer. Every one of those additions found something or confirmed something, so the
+ask stands for whatever is left: **embedded and cross toolchains** (ARM/AArch64 GCC, QNX, Green
+Hills), **older-but-alive compilers** anyone is stuck on, **libstdc++ vs libc++ vs MSVC STL edge
+cases** we haven't hit, and **nvcc** if you actually use CUDA. A green report is useful; a red one
+with the error text is better.
 
 ## 4. Stateless *composed* closures
 

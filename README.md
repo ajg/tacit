@@ -49,7 +49,10 @@ Costs are measured and small; see [Costs, limits, coexistence](#costs-limits-coe
 ## Requirements
 
 - **C++23**, no dependencies beyond the standard library. The full suite runs in CI on **clang 18
-  and 22**, **g++ 13 and 16** (`-std=c++23`), and **MSVC v19.4x** (`/std:c++latest`).
+  and 22**, **g++ 13 and 16** (`-std=c++23`), **MSVC v19.4x** and **clang-cl**
+  (`/std:c++latest`), and **AppleClang** — four front ends over three standard libraries, on Linux,
+  Windows, and macOS. Spot-checked besides (whole surface compiles and runs): **Intel ICX 2026**,
+  and **EDG 6.9**, the front end behind Visual Studio's IntelliSense.
 - On MSVC, `/utf-8` and `/Zc:preprocessor` are required and not implied by `/std:c++latest` — the
   first for `λ.hpp`'s encoding, the second because the vocabulary's X-macro engine uses
   `__VA_OPT__`. CMake users get both automatically. One gap: MSVC hasn't implemented C++23's
@@ -61,7 +64,7 @@ Two opt-in headers extend the surface later in this README: `<tacit/$.hpp>` (the
 partial CTAD) and `<tacit/λ.hpp>` (the lambda head). Both are include-is-the-opt-in; the default
 surface is just `_`.
 
-## Concepts
+## Notation
 
 ### Blanks (partial application)
 

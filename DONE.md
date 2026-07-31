@@ -156,3 +156,21 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     failures were POSIX assumptions in the tests (`filesystem::path::string_type` is `wstring` on
     Windows; `/tmp/x` is a RELATIVE path there), fixed by asserting against what the type itself
     reports. 29/29 on all three compiler families.
+
+18. ~~Toolchain breadth after MSVC.~~ **DONE** — CI legs added for **clang-cl** (the `windows` job
+    is now a matrix over front ends, `-T v143` / `-T ClangCL`, no vcvars shell and so no
+    third-party action) and **AppleClang** (`macos-15`, green first try — and the toolchain whose
+    libc++ produced the `std::tuple` surprise, so it belongs in CI rather than on a laptop).
+    clang-cl immediately earned its slot: it targets the MSVC ABI and therefore also ignores
+    `[[no_unique_address]]`, but it defines `__clang__`, so the compiler-based guard written for
+    MSVC handed it the ignored spelling and the emptiness guarantee broke again. Detection is now
+    `__has_cpp_attribute(msvc::no_unique_address)` — ask what a toolchain SUPPORTS, not what it is
+    called. Spot-checked green through the Compiler Explorer API, no CI cost: **Intel ICX 2026**
+    (compiles and runs the whole `$` surface) and **EDG 6.9** (the front end behind Visual Studio's
+    IntelliSense — so no red squiggles). Intel ICX was considered for a standing leg and declined:
+    a ~1 GB install would make it the slowest job by 3× for near-certain "clang-based, it works".
+
+19. ~~"Concepts" as a README section title.~~ **RENAMED to "Notation"** — `concept` is a C++
+    keyword, and a section called Concepts in a C++ library's README reads as a page about
+    `requires`-clauses. "Notation" is also just more accurate: blanks, vocabulary, sections,
+    composition, and application are the notation the library adds.
