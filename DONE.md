@@ -121,3 +121,15 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     `tacit_mark_inner_` local is invisible in practice; `apply`/`quote` naming waits for 1.0 by
     definition; named-concept diagnostics and a recipes section are future polish, not debts. The
     duplicate `<string_view>` include is gone.
+
+15. ~~Gate the named combinators?~~ **UNGATED** — `TACIT_COMBINATORS` is gone; `compose`, `fanout`,
+    `first`, `second`, and the `*_element` family are plain qualified `tacit::` functions, exported
+    unconditionally by the module too. The gate was a philosophy fence, and every argument that
+    justifies a gate elsewhere fails here: `$` is a lexer extension (its fence is the header), `λ`
+    is a macro (ditto), the sigils spend real operator readings (their fence is the macro) — but a
+    qualified name costs a caller nothing until spelled, and across a module boundary a gate
+    degrades to a build-time `-D` on the interface, the wrong granularity entirely (the same
+    argument that folded `$` into the one module). The premise stands: `_` is the core and the
+    README opens with it; `$`, `λ`, and the named combinators exist beside it, each fenced only by
+    what actually needs fencing. This also retroactively grounds #8's decline — the sub-namespace
+    would have been a fence around a field that needed none.

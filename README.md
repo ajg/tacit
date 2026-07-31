@@ -179,8 +179,7 @@ comparator, not a link.
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` bind the argument by
 reference, so `ranges::for_each(v, _ += 1)` updates `v` in place; `_ = _` and `_ += _` are the
 two-input forms. Bitwise `|` is an ordinary section
-(`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose` (behind
-`TACIT_COMBINATORS`), not in `|`.
+(`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose`, not in `|`.
 
 **Comma builds tuples.** Yes — the comma operator, overloaded. Before the reflex fires: every
 overload is a constrained hidden friend that requires a tacit operand (your commas are untouched),
@@ -204,8 +203,7 @@ doing its usual job, untouched.
 
 The usual blank rule applies, and it's the thing to watch: each `_` is a **distinct** blank, so
 `(_.size(), _.front())` takes *two* arguments — it is not a one-argument key function. For the
-same-input tuple (the lexicographic projection you probably want) that's `tacit::fanout` — behind
-`#define TACIT_COMBINATORS`, like the other named combinators below:
+same-input tuple (the lexicographic projection you probably want) that's `tacit::fanout`:
 
 ```cpp
 tacit::fanout(_.size(), _.front())  // x      -> {size(x), front(x)}
@@ -241,8 +239,8 @@ comparator.
 Member access chains, too: a projection keeps the vocabulary, so `_.front().size()` is
 `x -> size(front(x))` — `_.front().size()(words)` is the length of the first word.
 
-A few `_`-agnostic combinators live behind `#define TACIT_COMBINATORS` (off by default, to keep the
-surface at `_`): `tacit::compose(f, g, …)` composes arbitrary closures left-to-right
+A few `_`-agnostic named combinators round out the surface — qualified `tacit::` functions, so they
+never enter your scope uninvited: `tacit::compose(f, g, …)` composes arbitrary closures left-to-right
 (`compose(_ + 1, _ * 2)(3)` is `8`), `tacit::fanout(f, g, …)` maps a value to a tuple of projections,
 `tacit::first` / `tacit::second` transform one component of a pair, and the `*_element` family
 (`transform_elements`, `any_of_element`, …) drives a closure over a tuple-like. Each returns an `fn`,
@@ -473,9 +471,8 @@ using tacit::$;
 
 Macros don't cross a module boundary, so the `TACIT_VERBS` extension hook stays with
 `#include <tacit/_.hpp>` — `import` is enough to *use* `_`, `#include` to teach it your own names.
-For the same reason `TACIT_COMBINATORS` can't be switched on from the consumer side; build the
-interface with `-DTACIT_COMBINATORS` to have it export the combinators too. CI verifies the module
-path on clang only; GCC's modules support is not exercised, so prefer `#include` there.
+CI verifies the module path on clang only; GCC's modules support is not exercised, so prefer
+`#include` there.
 
 ## Costs, limits, coexistence
 

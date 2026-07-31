@@ -2,8 +2,8 @@
 
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
-opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote`; the free-function combinators are
-gated behind `TACIT_COMBINATORS`; `$` (canonical short name for `lift`/`make`) is opt-in by include,
+opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote` and the named combinators
+(`compose`/`fanout`/..., qualified-only, ungated); `$` (canonical short name for `lift`/`make`) is opt-in by include,
 `<tacit/$.hpp>`, as are the natural-spelling std blanks, `<tacit/experimental/std_blanks.hpp>`, and
 the lambda head `λ`, `<tacit/λ.hpp>` (standalone). Everything here is either already in one of those
 headers or a candidate for them.
@@ -38,7 +38,7 @@ detection that drives blanks is untouched. `fn op value` / `value op fn` compose
 `tacit::for_each_element / any_of_element / all_of_element / none_of_element / transform_elements`
 drive a callable over the elements of a tuple-like, via `std::apply` + fold-expressions (C++23).
 They are `_`-agnostic but pair naturally with `_`'s closures, e.g. `transform_elements(t, _.size())`.
-Opt-in behind `#define TACIT_COMBINATORS` (see the exported-surface note below).
+Qualified-only free functions, ungated (a `TACIT_COMBINATORS` gate existed and was dropped — see DONE.md #15).
 A `template for` (C++26, `__cpp_expansion_statements`) path can later extend them to arbitrary
 aggregates and reflection ranges behind a `TACIT_HAS_EXPANSION` flag — no API change.
 
@@ -81,7 +81,7 @@ The free-function combinators (`fanout`, `first`, `second`, the `*_element` fami
 kind: as free functions in `tacit`, they are *not* ADL-reachable — their arguments associate `std` and
 `tacit::detail`, never `tacit` — so they can only be called qualified, and each is a genuine extra
 symbol. Rather than move them to a sub-namespace (which fights the flat-namespace preference) or drop
-the cleverness, they sit behind `#define TACIT_COMBINATORS`: still in-tree, still tested, but off the
+the cleverness, they became plain qualified `tacit::` functions: still in-tree, still tested, off the
 default surface. Decision (pre-v1, experimental): gate, don't move or delete; revisit once real usage
 tells us whether they should graduate to the default surface (or become hidden friends of `fn`, which
 would make them ADL-reachable like `|` and moot the gate).
@@ -263,13 +263,13 @@ is deliberately *absent* from the view table pending a precedence call (member v
 
 **Compose combinators** *(implemented)* — `tacit::compose(f, g, …)` (left-to-right compose,
 `x -> …(g(f(x)))`), plus `tacit::fanout(f, g, …)` (Haskell `&&&`) and `tacit::first` / `tacit::second`,
-all behind `TACIT_COMBINATORS`. Each returns an `fn`, so results keep composing. `compose` replaced the
+all qualified-only. Each returns an `fn`, so results keep composing. `compose` replaced the
 old `f | g` operator when `|` went back to being a bitwise section (see the operator surface note); the
 ranges pipe is unaffected (its left operand is a range, not an `fn`). `f *** g` is
 `compose(first(f), second(g))`.
 
 **More Haskell combinators** *(planned, agreed — not yet built)* — a named set to add behind
-`TACIT_COMBINATORS`, all returning an `fn` so they keep composing:
+qualified-only like their closure cousins, all returning an `fn` so they keep composing:
 
 - `dup(f)` = Reader's `join` / the **W** combinator — `x -> f(x, x)`. The *sanctioned* answer to
   "repeated `_` are distinct blanks, reach for a lambda to reuse": `dup(_ * _)` is `x -> x*x`. It

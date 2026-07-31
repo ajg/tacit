@@ -1,8 +1,7 @@
-// Every opt-in at once: TACIT_COMBINATORS + TACIT_SIGILS + TACIT_VIEWS + TACIT_VERBS + TACIT_NOUNS,
+// Every opt-in at once: TACIT_SIGILS + TACIT_VIEWS + TACIT_VERBS + TACIT_NOUNS,
 // through <tacit/$.hpp>, with the std blanks and λ riding along. The individual gates each have
 // their own test; what this file pins is that they COMPOSE — no gate's machinery (sigil markers,
 // view verbs, taught names) breaks another's.
-#define TACIT_COMBINATORS
 #define TACIT_SIGILS
 #define TACIT_VIEWS
 #define TACIT_VERBS balance

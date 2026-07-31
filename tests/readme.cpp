@@ -1,6 +1,5 @@
 // Compile-and-run check of the code examples in README.md, section by section.
 // Keep in sync with the README: every code block that claims to be valid C++ is exercised here.
-#define TACIT_COMBINATORS
 #define TACIT_VERBS make_deposit, balance, is_frozen
 #include <tacit/$.hpp>
 #include <tacit/_.hpp>

@@ -1628,15 +1628,16 @@ inline constexpr _ _;
 //   fanout(f, g, ...)  x -> tuple{f(x), g(x), ...}         (Haskell &&&)
 //   first(f) / second(f)   transform one component of a pair   (Haskell first / second)
 //
-// These are free functions in `tacit`, reached only by qualification. To keep the default surface at exactly `_`, they
-// are gated: `#define TACIT_COMBINATORS` before including to enable them (and their `*_element` cousins below). Off by
-// default; the machinery still compiles either way.
+// These are free functions in `tacit`, reached only by qualification — they never enter anyone's scope uninvited, so
+// they cost a caller nothing until spelled. That is why they are UNGATED (a macro gate was tried and dropped): the
+// hazards that justify gating elsewhere — `$` is a lexer extension, `λ` is a macro, the sigils spend real operator
+// readings — do not exist for plain qualified names, and across a module boundary a gate on the interface build is the
+// wrong granularity entirely. The philosophy stands unchanged: the surface you SEE stays `_`.
 //
 // NOTE: `compose` is where general composition lives now that `operator|` is an ordinary bitwise section (`_ | y`),
 // symmetric with `&`, rather than the old `f | g` compose. Member chaining (`_.front().size()`) still composes
 // vocabulary on the default surface; `compose` is for composing arbitrary closures — `compose(_ + 1, _ * 2)(3)` == `(3
 // + 1) * 2` == 8.
-#ifdef TACIT_COMBINATORS
 template <class F, class... Gs> [[nodiscard]] constexpr auto compose(F f, Gs... gs) {
   if constexpr (sizeof...(Gs) == 0)
     return detail::fn{f};
@@ -1654,7 +1655,6 @@ template <class F> [[nodiscard]] constexpr auto first(F f) {
 template <class F> [[nodiscard]] constexpr auto second(F f) {
   return detail::fn{[f](auto &&p) { return std::pair{std::get<0>(p), f(std::get<1>(p))}; }};
 }
-#endif // TACIT_COMBINATORS
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------ Type-level tacit:
@@ -2046,9 +2046,8 @@ TACIT_MAKE_OVERLOADS(make)
 // Heterogeneous element combinators: drive a callable over the elements of a tuple-like. Built on std::apply +
 // fold-expressions (C++23); a `template for` (C++26) path can later extend them to arbitrary aggregates and reflection
 // ranges. They are `_`-agnostic (any callable works) but pair naturally with `_`'s closures, e.g. transform_elements(t,
-// _.size()) or any_of_element(t, _.empty()). Free `tacit::` functions, so — like the closure combinators above — they
-// sit behind `#define TACIT_COMBINATORS` and stay off the default surface.
-#ifdef TACIT_COMBINATORS
+// _.size()) or any_of_element(t, _.empty()). Free `tacit::` functions, reached only by qualification —
+// ungated, like the closure combinators above and for the same reason.
 template <class Tup, class F> constexpr void for_each_element(Tup &&t, F &&f) {
   // `void(...)` so the fold uses the built-in comma even when f returns something with an `operator,` of its own — an
   // `fn` or a comma section would otherwise accumulate here.
@@ -2069,7 +2068,6 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
   return std::apply([&](auto &&...xs) { return std::tuple{f(std::forward<decltype(xs)>(xs))...}; },
                     std::forward<Tup>(t));
 }
-#endif // TACIT_COMBINATORS
 
 } // namespace tacit
 

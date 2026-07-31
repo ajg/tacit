@@ -1,8 +1,7 @@
 // Verifies `import tacit;` end to end — the vocabulary, hidden-friend sections, composition, the
 // term wrapper ($ and its conforming spellings), and the type-level `bind` all crossing the module
 // boundary. Built only by the clang `modules` CI job (it needs a module build, so it is not part of
-// the CMake/ctest suite). The opt-in combinators would need the interface built with
-// -DTACIT_COMBINATORS.
+// the CMake/ctest suite).
 import tacit;
 
 #include <algorithm>
@@ -25,6 +24,7 @@ int main() {
   static_assert( // type-level projection reached through the same `_`
       std::is_same_v<tacit::_::value_type::of<std::vector<int>>, int>);
   assert($(-42).abs() == 42);                    // the term wrapper, same import
+  assert(tacit::compose(_ + 1, _ * 2)(3) == 8); // named combinators: exported unconditionally
   assert(($<std::vector>(1, 2, 3)) == (tacit::make<std::vector>(1, 2, 3)));
   return 0;
 }

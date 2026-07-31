@@ -18,10 +18,9 @@
 // TACIT_NO_DOLLAR — the skipped `$` lines are only ever preprocessing tokens, which is
 // pedantic-clean (also CI-proven).
 //
-// Macros do not cross a module boundary: the extension hooks (TACIT_VERBS, TACIT_NOUNS,
-// TACIT_COMBINATORS, ...) are reachable only through `#include`; build this interface with
-// -DTACIT_COMBINATORS to compile and re-export the combinators. For the same reason `λ` — a macro —
-// can never be carried by any named module: `#include <tacit/λ.hpp>` is its permanent vehicle.
+// Macros do not cross a module boundary: the extension hooks (TACIT_VERBS, TACIT_NOUNS, ...) are
+// reachable only through `#include`. For the same reason `λ` — a macro — can never be carried by
+// any named module: `#include <tacit/λ.hpp>` is its permanent vehicle.
 //
 // Verified with clang. GCC's -fmodules-ts (as of 13) does not yet handle this pattern reliably;
 // prefer `#include` there.
@@ -43,7 +42,6 @@ using tacit::quote;
 #ifndef TACIT_NO_DOLLAR
 using tacit::$;
 #endif
-#ifdef TACIT_COMBINATORS
 using tacit::all_of_element;
 using tacit::any_of_element;
 using tacit::compose;
@@ -53,5 +51,4 @@ using tacit::for_each_element;
 using tacit::none_of_element;
 using tacit::second;
 using tacit::transform_elements;
-#endif
 } // namespace tacit
