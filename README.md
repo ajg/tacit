@@ -177,7 +177,8 @@ message pointing at `_ >= 10` (or `!`). `_ < _` is unaffected: with two blanks i
 comparator, not a link.
 
 Assignment is included and **mutates**: `_ = 0` and compound forms like `_ += 1` bind the argument by
-reference, so `ranges::for_each(v, _ += 1)` updates `v` in place. Bitwise `|` is an ordinary section
+reference, so `ranges::for_each(v, _ += 1)` updates `v` in place; `_ = _` and `_ += _` are the
+two-input forms. Bitwise `|` is an ordinary section
 (`_ | 4`), symmetric with `&`; general function composition lives in `tacit::compose` (behind
 `TACIT_COMBINATORS`), not in `|`.
 

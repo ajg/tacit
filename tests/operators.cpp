@@ -140,6 +140,14 @@ int main() {
     assert(_.get()(p) == p.get()); // the smart pointer's own member still via dot
   }
 
+  // ---- `_ = _` is the two-input assignment section, like `_ += _` (it was the one operator
+  // missing its two-blank form) ----
+  {
+    int a = 1;
+    (_ = _)(a, 5);
+    assert(a == 5);
+  }
+
   // ---- a non-copyable RVALUE left operand is a compile error (regression: it used to bind by
   // reference and dangle silently) — `std::ostringstream{} << _` now static_asserts with "name it
   // first". Negative-compile, so pinned by inspection; the lvalue path stays by-reference: ----

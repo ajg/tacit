@@ -1,9 +1,13 @@
-OUTSTANDING
------------
+DONE
+----
 
-Repo state: private, v0.4.0 tagged, pre-announcement fixes landed (#12) — awaiting the launch
-sequence (#14). CI matrix: clang++-18/22, g++-13/16, modules (clang, with strict-consumer and
-strict-interface legs), packaging (with the single/ freshness gate). 27 ctest targets. The
+The decision ledger: what was done, what was declined, and why — newest at the bottom. Open work,
+when it exists, lives here too until it resolves; right now everything is settled. (Public asks —
+the things we *couldn't* do — are in ASKS.md.)
+
+Repo state: private, v0.4.0 tagged, pre-announcement fixes landed (#12). CI matrix: clang++-18/22,
+g++-13/16, modules (clang, with strict-consumer and strict-interface legs), packaging (with the
+single/ freshness gate). 27 ctest targets. The
 `typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`,
 so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS`.
 
@@ -66,8 +70,9 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
    closure); `tacit::of` (says nothing standalone); anything of the form `$name` (`$` is an
    identifier *character*, so `$std` lexes as ONE token — `$` can never prefix a name).
 
-8. Named combinators (compose / fanout / first / second, currently behind `TACIT_COMBINATORS`) into a
-   sub-namespace — still open, carried over from #4.
+8. ~~Named combinators into a sub-namespace.~~ **DECLINED** — the gate (`TACIT_COMBINATORS`) is
+   already the fence; a sub-namespace would be a second fence around the same field, and every use
+   would grow a qualifier for no added safety. Carried from #4, considered twice, dropped.
 
 9. ~~`λ.hpp`.~~ **DONE** — `<tacit/λ.hpp>`, completely standalone (includes nothing), conforming
    (`λ` is a legal C++23 identifier per UAX #31, `-pedantic-errors`-clean, needs UTF-8 source). The
@@ -108,21 +113,11 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     argument, costs/limits/coexistence with measured numbers, comma defense, Lambda2 comparison);
     ASKS.md added as the outward-facing challenge list.
 
-13. **OPEN — review leftovers, all small.** From the hostile header read, recorded as
-    defensible-or-cosmetic and not yet done: `_ = _` is a compile error while `_ += _` is a
-    two-input section (add the n-ary form or a comment); the middle operand of a comparison chain
-    is evaluated once per link — documented by example, but a one-line "runs twice" note where the
-    chain is defined would close it; the dead `tacit_mark_inner_` local is materialized in every
-    unary-section builder even with sigils off; `apply`/`quote` are marked "(Naming provisional.)"
-    and should be settled before 1.0; `lift`/`$` hold lvalue subjects by reference (documented at
-    the definition — say it in the announcement too). Clearer diagnostics (named concepts) and a
-    recipes section remain from the adoption notes in extras. (The duplicate `<string_view>`
-    include is fixed.)
-
-14. **OPEN — launch sequence.** In order, all awaiting the word: tag `v0.5.0` (0.4.0 predates the
-    forwarding fix — don't announce it); flip the repo public; within minutes verify the README CI
-    badge, raw.githubusercontent URLs for `single/`, and a Compiler Explorer remote-include of
-    `single/_.hpp`; add the Godbolt "try it" link to the README; publish a GitHub Release with
-    notes; set repo topics; optionally the `ajg/homebrew-tacit` tap (formula drafted in the session
-    notes — needs the new tag's sha256); then soft-launch (cpplang Slack #show-and-tell, C++
-    Discord) before r/cpp, Show HN, lobste.rs, isocpp, awesome-cpp.
+13. ~~Review leftovers.~~ **CLOSED** — `_ = _` is fixed: it is now the two-input assignment
+    section, `(a, b) -> (a = b)`, exactly as `_ += _` always was (declaring `operator=(self)` also
+    suppresses the implicit copy assignment, which a stateless tag never needed); documented in the
+    README and tested. The rest of the litter was reviewed and deliberately let go: the chain's
+    middle operand running once per link is already shown by the doc's own expansion; the dead
+    `tacit_mark_inner_` local is invisible in practice; `apply`/`quote` naming waits for 1.0 by
+    definition; named-concept diagnostics and a recipes section are future polish, not debts. The
+    duplicate `<string_view>` include is gone.

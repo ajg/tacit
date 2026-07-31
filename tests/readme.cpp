@@ -123,6 +123,8 @@ int main() {
   assert(mv[0] == 2);
   std::ranges::for_each(mv, _ = 0);
   assert(mv[2] == 0);
+  (_ = _)(mv[0], 7); // two-input form
+  assert(mv[0] == 7);
   assert((_ | 4)(1) == 5);
 
   // --- Comma sections ---

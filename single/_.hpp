@@ -655,6 +655,14 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
     return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                                      \
              { return std::forward<decltype(x)>(x) = y; }};                                                            \
   }                                                                                                                    \
+  /* `_ = _` is two-input, like `_ += _` — the pothole was that only `=` lacked its two-blank                          \
+     form. Declaring this suppresses the implicit copy assignment, which a stateless tag never                         \
+     needed. */                                                                                                        \
+  [[nodiscard]] constexpr auto operator=(self) const {                                                                 \
+    return tacit::detail::fn{[](auto&& a, auto&& b) -> decltype(auto)                                                  \
+             { return std::forward<decltype(a)>(a) = std::forward<decltype(b)>(b); },                                  \
+             tacit::detail::nary{}};                                                                                   \
+  }                                                                                                                    \
   /* comma is the tupling section: `_, _` == (a, b) -> {a, b}, `_, y` == x -> {x, y}, and each                         \
      further `,` appends an operand — see `comma_section`. Operands that are an `fn` or an already                     \
      accumulated comma section are excluded here; their own overloads take those. */                                   \
