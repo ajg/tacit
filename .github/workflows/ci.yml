@@ -42,13 +42,23 @@ jobs:
           clang++-18 $FLAGS --precompile tacit.cppm -o tacit.pcm
           clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm tests/module_check.cpp tacit.pcm -o module_check
           ./module_check
-      - name: Build and run `import tacit.dollar;` (clang)
+      - name: Strict consumer against the $-bearing interface (-pedantic-errors)
+        # import injects names, not tokens: a strictly-conforming TU never lexes `$` even though the
+        # interface exports it. This is the proof that one module suffices — no tacit.dollar split.
         run: |
           FLAGS="-std=c++23 --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -Iinclude"
-          clang++-18 $FLAGS --precompile dollar.cppm -o dollar.pcm
-          clang++-18 $FLAGS -fmodule-file=tacit=tacit.pcm -fmodule-file=tacit.dollar=dollar.pcm \
-            tests/module_dollar_check.cpp tacit.pcm dollar.pcm -o module_dollar_check
-          ./module_dollar_check
+          clang++-18 $FLAGS -pedantic-errors -fmodule-file=tacit=tacit.pcm \
+            tests/module_strict_check.cpp tacit.pcm -o module_strict_check
+          ./module_strict_check
+      - name: Strict interface build (-DTACIT_NO_DOLLAR -pedantic-errors)
+        # ...and for builds that must compile even the interface strictly, the opt-out: the skipped
+        # `$` lines are only preprocessing tokens, which is pedantic-clean.
+        run: |
+          FLAGS="-std=c++23 --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -Iinclude"
+          clang++-18 $FLAGS -pedantic-errors -DTACIT_NO_DOLLAR --precompile tacit.cppm -o tacit_strict.pcm
+          clang++-18 $FLAGS -pedantic-errors -fmodule-file=tacit=tacit_strict.pcm \
+            tests/module_strict_check.cpp tacit_strict.pcm -o module_strict_check2
+          ./module_strict_check2
 
   packaging:
     runs-on: ubuntu-24.04

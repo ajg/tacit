@@ -453,14 +453,17 @@ path) lets you `#if` on whether they exist.
 
 ## Modules
 
-`import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the header
-and re-exports `_`, `lift`, `make`, and the type-level names. The header split has a module mirror:
-`$` is its own module, `tacit.dollar` (`dollar.cppm` — a module name can't contain `$`), so the
-opt-in stays per-consumer, exactly as `#include <tacit/$.hpp>` is:
+`import tacit;` is available as an experimental C++20 module (`tacit.cppm`), which wraps the headers
+and re-exports everything — `_`, `$`, `lift`, `make`, and the type-level names. One module, on
+purpose: the `_.hpp` / `$.hpp` split exists because `#include` injects *tokens* (a TU that includes
+`$.hpp` lexes `$`, which `-pedantic-errors` rejects), but an `import` injects only *names*, and a
+name costs nothing until you spell it. A strictly-conforming TU can `import tacit;` and keep to
+`lift`/`make` — CI compiles exactly that consumer with `-pedantic-errors` against the `$`-bearing
+interface. If even the *interface* must build strictly, `-DTACIT_NO_DOLLAR` drops `$` from it (also
+CI-proven).
 
 ```cpp
-import tacit;         // _, lift, make, bind, apply, quote
-import tacit.dollar;  // adds $
+import tacit;   // _, $, lift, make, bind, apply, quote
 using tacit::_;
 using tacit::$;
 ```
