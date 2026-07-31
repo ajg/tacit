@@ -853,6 +853,48 @@ right:
   `f >> ((*_) * 2)` and `f &&& _ * 2` is `f && ((&_) * 2)` — write `f >>* (_ * 2)`,
   `f &&& (_ * 2)`.
 
+#### The full lexical space, curated (second pass)
+
+A regeneration of the sweep with an exact maximal-munch lexer, separating every theft mechanism and
+curating *meaning* over the whole space. Candidates: hinge binary `H` ∈ `{+ - * / % ^ & | << >> &&
+|| < > <= >= == != <=> ,}` with one prefix unary `P` ∈ `{+ - * & ! ~ ++ --}` (so `f H (P g)`); the
+left-postfix family `(f L) H g`, `L` ∈ `{++ --}`; and `H P P`.
+
+**154 of 160 two-op forms lex as intended.** The six thefts, exhaustively: `+`·`+`, `-`·`-`, `&`·`&`
+are swallowed by `++` `--` `&&` (which is why `&&&` must be carved from hinge `&&`, not hinge `&`);
+`+`·`++` and `-`·`--` glue into `++`+`+` / `--`+`-`; and `/`·`*` opens a comment. Digraph theft is
+IMPOSSIBLE in this space — it needs `%`/`:` adjacencies no hinge+prefix pair produces. The
+left-postfix family lexes 40/40; the three-op space 1137/1280 (135 munch, 8 comment). Roughly 1,300
+lexically valid spellings in all: availability is vast, and **meaning is the scarce resource, not
+lexing**.
+
+Curation of everything with a pulse (the other ~97% is semantic vacuum):
+
+| glyph | lexes as | lineage | verdict |
+| --- | --- | --- | --- |
+| `&&&` `***` `>>*` `<<*` | — | fanout, product, compose | shipped |
+| `->*` | one real token | member-pointer projection | shipped (real op, ungated) |
+| `&&*` `\|\|*` | `&&`/`\|\|`·`*` | same-x conjunction/disjunction, `x -> f(x) && g(x)` | ASSIGNABLE — fills the documented same-x gap, reuses the paid-for `*` marker, one given-up reading each; and-not composes free as `f &&* !g`. Not yet implemented. |
+| `+++` | postfix `++`·`+` | Haskell sum (map `variant`/`expected` sides) | reserve; the spelling waits for the semantics (sum-type dispatch is itself deferred) |
+| `>>=` `<<=` | real single tokens | Haskell bind (Reader) | decline — assignable like `->*` was, but Reader-bind in C++ is a curiosity and shift-assign has a real meaning |
+| `-->` | postfix `--`·`>` | "goes to"; reads best as compose | decline (left-marker fights `>`-associativity; needs `marker > marker` overloads) |
+| `\|\|\|` `>>>` `<<<` `<*>` `<\|>` `<$>` `>=>` `=<<` `~>` `!!` `^^` | — | fanin, compose, ap, alternative, fmap, Kleisli, index | dead at the lexer: trailing piece has no prefix form, `~` has no binary form, or the token does not exist |
+| any comparison hinge (`<*` `<--` `==*` `<=~` …) | all lex | — | noise + HAZARD: entangles with the `0 < _ < 10` chain-rewriting machinery; blanket exclusion |
+| `,`-hinge (`,*` `,&` …) | all lex | — | noise: comma is the n-ary tupling section; a marked reading would be maximally confusing |
+| `&~` | `&`·`~` | the C bit-clear idiom `x & ~mask` | leave alone — it already means the right thing pointwise |
+
+**The `$` non-column.** `$` can never be a sigil piece: it is an identifier CHARACTER, so `f $>> g`
+is the identifier `$` juxtaposed with `f` — a parse error always (verified) — and glued forms
+(`>>$g`, `f$<<`) silently rename the operand (`$g` is one token). Its operator-space contribution is
+exactly zero; it is a *naming* resource (`$1`…`$9`), nothing more.
+
+**The consolation prize: `operator""_`.** A user-defined literal suffix must begin with `_`, and `_`
+alone qualifies — so `operator""_` is CONFORMING, and it coexists with `using tacit::_;` (different
+names; verified together under `-pedantic-errors`). That makes `1_`, `2_`, `3_` available as
+positional-blank literals in strictly conforming C++: `sort(v, 2_ < 1_)` with no `$`, no extension,
+no UCN. If the named-placeholder design (λ section above) ever lands, this is likely its best
+spelling — beats `$x`/`$y` and `$1`/`$2` on conformance, and the digit states the position.
+
 #### `$` as a class rather than a function (explored; rejected)
 
 A class would buy back the one thing the function cannot have — **a scope**. `$<int>::of<F>` works for
@@ -961,7 +1003,8 @@ where it already lives, opt-in by include. Semantics that fall out cleanly: slot
 ignored, as Boost.Lambda's `_2` was); mixing named and anonymous blanks in one expression should be
 ill-formed (two slot systems). Spelling fork: `$x/$y/$z` reads like math, `$1/$2/$3` states position
 and scales — the type-level notes already point at `$1`/`$2` as what the value-pack `pattern<>`
-machinery should eventually serve. Cost: `fn` must carry a slot mask and unify it under every
+machinery should eventually serve. A third spelling later beat both on conformance: `1_`/`2_` via
+`operator""_` — see "The consolation prize" under the sigil sweep's second pass. Cost: `fn` must carry a slot mask and unify it under every
 operator section — a real extension of the composition machinery, which is why this is a recorded
 design and not an implementation. If it lands, λ's niche shrinks to statements — by construction the
 one place it cannot be replaced.
