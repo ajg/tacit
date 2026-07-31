@@ -33,11 +33,12 @@ adjacent language). We would happily co-author that paper.
 
 ## 3. MSVC coverage
 
-The core is strictly conforming (`-pedantic-errors`-clean on clang), so it *should* work on MSVC —
-but "should" is not a CI column. We don't run Windows. If you do: build the test suite
-(`cmake -B build && ctest --test-dir build`), tell us what breaks, or better, send the workflow leg.
-Known flags to start from: `/std:c++latest /utf-8` (the λ header is UTF-8; its macro is conforming
-C++23). First reports — even "it all passed" — are the ask.
+Sanity-checked, not proven: MSVC v19.latest compiles the core, `$`, and `λ` clean at `/W4` and runs
+representative probes correctly (verified via Compiler Explorer), with
+`/std:c++latest /utf-8 /Zc:preprocessor` — the last is non-negotiable, the vocabulary's X-macro
+engine uses `__VA_OPT__`. What remains is the real thing: run the full test suite on Windows
+(`cmake -B build && ctest --test-dir build`), tell us what breaks, or better, send the workflow
+leg. "It all passed" is a fine first report.
 
 ## 4. Stateless *composed* closures
 

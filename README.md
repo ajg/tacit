@@ -50,8 +50,10 @@ Costs are measured and small; see [Costs, limits, coexistence](#costs-limits-coe
 
 - **C++23** (tested on clang 18 and 22, g++ 13 and 16, `-std=c++23`). No dependencies beyond the
   standard library.
-- **MSVC is untested.** The core is strictly conforming (`-pedantic-errors`-clean), so it *should*
-  work; no claim until CI says so.
+- **MSVC: sanity-checked, not yet CI'd.** v19.latest compiles the core, `$`, and `λ` clean at `/W4`
+  and runs representative probes correctly, with `/std:c++latest /utf-8 /Zc:preprocessor` (the last
+  is required — the vocabulary's X-macro engine uses `__VA_OPT__`). The full test suite awaits a
+  Windows CI leg.
 - Optional **C++26 reflection (P2996)** unlocks the reflective members; auto-detected, otherwise
   compiled out. See [Reflective hatch](#reflective-hatch-c26).
 
@@ -494,7 +496,7 @@ with `!`"), and a non-copyable temporary bound into a closure ("name it first").
 **Runtime.** A tacit closure is an ordinary lambda composition — no type erasure, nothing virtual;
 codegen spot-checks against hand-written lambdas are in `tacit_extras.md`.
 
-**MSVC** is untested (see Requirements).
+**MSVC** is sanity-checked but not CI'd (see Requirements for the flags).
 
 **If your codebase already has a `_`:**
 

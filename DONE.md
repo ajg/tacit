@@ -133,3 +133,14 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     README opens with it; `$`, `λ`, and the named combinators exist beside it, each fenced only by
     what actually needs fencing. This also retroactively grounds #8's decline — the sub-namespace
     would have been a fence around a field that needed none.
+
+16. ~~MSVC: any signal at all?~~ **SANITY-CHECKED** — via the Compiler Explorer API (no Windows
+    machine involved): MSVC v19.latest compiles `single/_.hpp`, `single/$.hpp`, and `single/λ.hpp`
+    with ZERO warnings at `/W4` and executes representative probes correctly (sections, chaining,
+    comma, composition, partial CTAD, lift, `$` — so MSVC accepts `$` identifiers — and λ under
+    `/utf-8`). Required flags: `/std:c++latest /EHsc /utf-8 /Zc:preprocessor` — the conforming
+    preprocessor is NOT implied by /std:c++latest, and without it the X-macro engine's `__VA_OPT__`
+    misfires (warning C5109). ASKS #3 narrowed accordingly: what remains is the full suite on a
+    real Windows runner (a `windows-2022` GitHub Actions leg is the cheap durable route). The
+    single/ files earned their keep here: self-contained one-file payloads are exactly what a
+    compile API wants.
