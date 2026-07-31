@@ -45,8 +45,10 @@ int main() {
     assert(_.stem()(p) == "report");
     assert(_.filename()(p) == "report.txt");
     assert(_.parent_path()(p) == "/tmp");
-    assert(_.is_absolute()(p));
-    assert(!_.is_relative()(p));
+    // absoluteness is platform law, not vocabulary: "/tmp/..." is absolute on POSIX and RELATIVE
+    // on Windows (no drive/root-name), so compare against what the type itself says
+    assert(_.is_absolute()(p) == p.is_absolute());
+    assert(_.is_relative()(p) == p.is_relative());
     assert(_.has_extension()(p));
     assert(_.string()(p) == "/tmp/report.txt");
     (void)_.generic_string()(p);

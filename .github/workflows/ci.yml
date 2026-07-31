@@ -31,9 +31,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   msvc:
-    # Experimental until first green, then promoted to blocking (drop continue-on-error).
     runs-on: windows-2022
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - name: Configure
@@ -43,7 +41,10 @@ jobs:
         # would vaporize every assert, passing the suite vacuously.
         run: cmake --build build --config Debug --parallel
       - name: Test
-        run: ctest --test-dir build -C Debug --output-on-failure
+        # --timeout: a failing Debug assert on Windows pops a MODAL DIALOG and the runner then
+        # waits out the whole job (25 minutes, observed). The timeout turns that hang into a
+        # prompt failure.
+        run: ctest --test-dir build -C Debug --output-on-failure --timeout 60
 
   modules:
     runs-on: ubuntu-24.04
