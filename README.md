@@ -347,7 +347,8 @@ std::ranges::count_if(v, λ(s) { return s.size() * s.size() > 4u; })  // s used 
 ```
 
 Because the body never passes through the macro, it is plain C++ — commas, statements, multiple
-returns, no escaping rules. Capture is `[&]`. The header is **completely standalone** (it includes
+returns, no escaping rules. Capture is `[&]`. No λ key? `\u{3BB}(x)` is the same identifier —
+UCNs are equivalent to the character they name, macros included — so λ works from pure ASCII source. The header is **completely standalone** (it includes
 nothing, not even `_.hpp`) and, unlike `$`, fully conforming: `λ` is a legal C++23 identifier (UAX
 #31), so it survives `-pedantic-errors`; it only asks for UTF-8 source. One caveat has no cure:
 macros cannot cross a module boundary, so `#include <tacit/λ.hpp>` is the permanent vehicle — no

@@ -966,6 +966,33 @@ operator section — a real extension of the composition machinery, which is why
 design and not an implementation. If it lands, λ's niche shrinks to statements — by construction the
 one place it cannot be replaced.
 
+**The `\(...)` question — how close can a backslash get?** (All verified on clang 18/Apple 21,
+`-std=c++23 -pedantic-errors` unless noted.) Bare `\(` is permanently impossible: `\` is not an
+identifier character on any implementation (unlike `$`), there is no `operator\`, and a lone `\`
+preprocessing-token is ill-formed the moment it converts to a token. Outside literals the grammar
+allows exactly one thing after `\`: a *universal-character-name*. That turns out to be a gift —
+
+    \u03BB(x) { return x * 2; }         // invokes λ: UCN and glyph are THE SAME identifier,
+    \u{3BB}(a, b) { return a + b; }  // macro replacement included (delimited form is C++23, P2290)
+
+so λ is invocable from pure ASCII source, conformingly. (C++23's P2314 is what pinned glyph/UCN
+macro interchangeability after earlier implementation divergence.) The spelling cannot get shorter
+than `\u{3BB}` *for λ*: a UCN may not designate a basic-charset character (`\u{41}` is a hard error,
+so no ASCII names), leaving the Latin-1 letters as the two-hex-digit floor — `\u{aa}` (ª, the lowest
+XID_Start above ASCII) and `\u{b5}` (µ) both work as macro names, saving exactly one character over
+`\u{3BB}` at the price of a name that means nothing. Verdict: λ keeps its name; the byte is not
+worth the glyph.
+
+**Digraphs and trigraphs, while we're here.** Digraphs are alive and undeprecated — token-level
+alternative spellings, `-pedantic-errors`-clean in C++23 (`v<:0:>`, `int main() <% %>`, and the
+alternative operator tokens `and`/`not`/...). But they mint nothing: `<: :> <% %>` alias brackets
+and braces, and `%:` / `%:%:` alias `#` / `##`, which exist only in the preprocessor — no new sigil
+raw material, so the synthetic-sigil sweep over the real punctuators was already complete. Trigraphs
+were REMOVED in C++17 (they were phase-1 *character* substitution, string literals included); clang
+ignores them with a warning by default and honors them only under `-trigraphs` — where, for the
+record, the three-era chain works: `??/u{3BB}(x)` → phase 1 `\u{3BB}(x)` → phase 3 `λ(x)` → macro
+expansion → a lambda head.
+
 ### The placeholder is always `_` (decision)
 
 An earlier design let you *derive* a fresh placeholder object — `TACIT_LIEUTENANT(teller, it, …)` minted

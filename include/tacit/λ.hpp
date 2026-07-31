@@ -33,6 +33,10 @@
 // (universal today; MSVC wants /utf-8). Including this header is the opt-in, and it claims exactly
 // one user-facing name: `λ`.
 //
+// No λ key, or an ASCII-only source policy? `\u03BB(x)` and (C++23) `\u{3BB}(x)` are THE SAME
+// identifier as `λ(x)` — universal-character-names in identifiers are equivalent to the character
+// they name, macro replacement included — so both invoke this macro, conformingly, from pure ASCII.
+//
 // The TACIT_LAMBDA_* helpers below must SURVIVE the include — λ expands at every use site, unlike
 // the generators <tacit/_.hpp> consumes and #undefs at include time — so they are part of the deal.
 // A comma-separated FOR_EACH (the one in <tacit/_.hpp> is semicolon-flavored, and cleaned up after

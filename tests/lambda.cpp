@@ -38,6 +38,14 @@ int main() {
     assert(add(2)(3) == 5);
   }
 
+  // ---- ASCII spellings: a UCN-spelled identifier IS the identifier, macro replacement included ----
+  {
+    assert(\u03BB(x) { return x * 2; }(21) == 42);   // the classic 4-hex form
+#if __cplusplus >= 202302L
+    assert(\u{3BB}(a, b) { return a + b; }(40, 2) == 42); // the C++23 delimited form
+#endif
+  }
+
   // ---- the trailing-return slot is open: opt into reference preservation per site ----
   {
     std::vector<std::string> v{"abc"};
