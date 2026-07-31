@@ -1,11 +1,11 @@
 OUTSTANDING
 -----------
 
-Repo state: CI matrix is clang++-18/22 and g++-13/16 plus modules and packaging jobs. The
-`typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`
-(`[[clang::no_specializations]]`), so the experimental std-blanks header skips the tuple cell there
-and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is marked as of libc++ 21;
-`pair`/`vector`/`set`/`map` are not.
+Repo state: private, v0.4.0 tagged, pre-announcement fixes landed (#12) — awaiting the launch
+sequence (#14). CI matrix: clang++-18/22, g++-13/16, modules (clang, with strict-consumer and
+strict-interface legs), packaging (with the single/ freshness gate). 27 ctest targets. The
+`typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`,
+so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS`.
 
 
 1. ~~blank vs hole terminology.~~ **DONE** — `blank` everywhere; `hole<A...>` is now `blank<A...>`,
@@ -36,9 +36,10 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
    (compose/fanout/first/second) already exist behind `TACIT_COMBINATORS`; moving them to a
    sub-namespace is still open.
 
-5. README. **Namespaces fixed** — every range-taking algorithm is now `std::ranges::`; the headline
-   example did not compile before. Still outstanding: inferred std types to cut noise, and documenting
-   whatever lands from #4 and #6.
+5. ~~README.~~ **SUPERSEDED** — the namespace fixes landed, and everything else this item wanted
+   was absorbed by #10 (the reframe) and the announcement pass (#12): #4 and #6 are documented (then
+   deliberately demoted to `tacit_extras.md` pointers), and the compile-checked `tests/readme.cpp`
+   discipline now guards every code block.
 
 6. ~~Split `_` and `$` into `_.hpp` and `$.hpp`.~~ **DONE** — the fork resolved toward `$.hpp`
    including `_.hpp`: `$`-without-`_` was never a real use case (`$<std::set, _, ...>` has `_` in its
@@ -92,3 +93,36 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
     `single_check` target builds against `single/` alone (not linked to tacit::tacit, so the include
     path proves standalone-ness) on every matrix leg. std_blanks stays repo-only; modules are
     orthogonal (`.cppm` GMFs resolve at interface-build time; `single/` never participates).
+
+12. ~~Pre-announcement readiness review.~~ **DONE** — two fresh-eyes reviews (README-as-first-contact
+    and a hostile header read) plus mechanical probes (compile cost ~0.1s over a std baseline,
+    ~10-line error messages, C++26 `_` coexistence verified). All three blockers fixed with
+    regression tests: fills are genuinely perfect-forwarded now (they collapsed to lvalues — rvalue
+    fills copied, move-only fills didn't compile); a bool folded into a comparison chain
+    (`(_ < 10) == false`, an always-false closure) is a static_assert with the fix in the message;
+    a non-copyable rvalue operand (`std::ostringstream{} << _`, silently dangling) is a
+    static_assert saying "name it first". Should-fixes landed too: the six vocabulary SFINAE guards
+    now test the exact call their bodies make (`std::decay_t<A> const&...`), `_()`/`_(a...)` return
+    `fn` like every other builder, and λ.hpp states the Greek-identifier collision and its bounds.
+    README rewritten as an announcement document (why-this-exists with the C++20 addressability
+    argument, costs/limits/coexistence with measured numbers, comma defense, Lambda2 comparison);
+    ASKS.md added as the outward-facing challenge list.
+
+13. **OPEN — review leftovers, all small.** From the hostile header read, recorded as
+    defensible-or-cosmetic and not yet done: `_ = _` is a compile error while `_ += _` is a
+    two-input section (add the n-ary form or a comment); the middle operand of a comparison chain
+    is evaluated once per link — documented by example, but a one-line "runs twice" note where the
+    chain is defined would close it; the dead `tacit_mark_inner_` local is materialized in every
+    unary-section builder even with sigils off; `apply`/`quote` are marked "(Naming provisional.)"
+    and should be settled before 1.0; `lift`/`$` hold lvalue subjects by reference (documented at
+    the definition — say it in the announcement too). Clearer diagnostics (named concepts) and a
+    recipes section remain from the adoption notes in extras. (The duplicate `<string_view>`
+    include is fixed.)
+
+14. **OPEN — launch sequence.** In order, all awaiting the word: tag `v0.5.0` (0.4.0 predates the
+    forwarding fix — don't announce it); flip the repo public; within minutes verify the README CI
+    badge, raw.githubusercontent URLs for `single/`, and a Compiler Explorer remote-include of
+    `single/_.hpp`; add the Godbolt "try it" link to the README; publish a GitHub Release with
+    notes; set repo topics; optionally the `ajg/homebrew-tacit` tap (formula drafted in the session
+    notes — needs the new tag's sha256); then soft-launch (cpplang Slack #show-and-tell, C++
+    Discord) before r/cpp, Show HN, lobste.rs, isocpp, awesome-cpp.

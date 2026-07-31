@@ -115,7 +115,6 @@
 #endif
 #if TACIT_HAS_REFLECTION
 #include <meta>
-#include <string_view>
 #endif
 
 namespace tacit {
