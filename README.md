@@ -227,35 +227,51 @@ std::vector<std::function<void()>> thunks{};
 std::ranges::for_each(thunks, _()); // invoke each thunk
 ```
 
-## The term wrapper
+## The term wrapper: `$`
 
-`_` is a blank, awaiting its subject. `tacit::lift(x)` is the other side: it gives a plain value the
-vocabulary it may not have as members, and applies it **eagerly**. The rule is exactly
-`lift(x).f(a…)` == `_.f(a…)(x)`, so there is one vocabulary and one dispatch, not two to keep in step:
+`_` is a blank, awaiting its subject. `$` is the other side: it takes the subject **now**. `$(x)`
+gives a plain value the vocabulary it may not have as members and applies it eagerly; `$<F>(a…)`
+builds a value. It lives in `<tacit/$.hpp>`, and including the header is the opt-in — no macro:
 
 ```cpp
-lift(v).size()        // ranges::size(v) — even where v.size() doesn't exist
-lift(-42).abs()       // 42 — a bare value has no members at all
-lift("abc").length()  // 3
+#include <tacit/$.hpp>   // brings <tacit/_.hpp> with it
+using tacit::_;
+using tacit::$;
+
+$(v).size()         // ranges::size(v) — even where v.size() doesn't exist
+$(-42).abs()        // 42 — a bare value has no members at all
+$("abc").length()   // 3
 ```
 
-Two things worth knowing. A string literal's raw type is never what you mean — `const char[4]` has no
-members, and `ranges::size("abc")` counts the NUL — so a char array is normalized to `string_view` on
-the way in. And a lifted call hands back the operation's own result, not a wrapper, so chaining
-continues on that result's own type.
+The rule is exactly `$(x).f(a…)` == `_.f(a…)(x)`, so there is one vocabulary and one dispatch, not
+two to keep in step. Two things worth knowing. A string literal's raw type is never what you mean —
+`const char[4]` has no members, and `ranges::size("abc")` counts the NUL — so a char array is
+normalized to `string_view` on the way in. And a call hands back the operation's own result, not a
+wrapper, so chaining continues on that result's own type: `$` is a **one-hop lift**, not a fluent
+facade — `$(v).front()` is a `std::string&`, and if you need two hops you are describing a
+computation, which is `_`'s job (`_.front().size()(v)` says it better, and is reusable).
 
 The vocabulary has a third dispatch kind for this: beside member calls and the range CPOs, names that
 are *free functions* in the standard library (`abs`, `sqrt`, `floor`, `round`, `isnan`, …) route to
 `std::`. They work on `_` as well — `count_if(v, _.abs() > 1)`.
 
-### Making a value: `make` and partial CTAD
-
-`lift` adopts a value that exists. `tacit::make<F>(a…)` builds one:
+`$` is a **function**, not a macro — it keeps its namespace, obeys ADL, and claims nothing from the
+rest of the translation unit. `$(p)->f()` reaches through a handle to the pointee, mirroring `_->f()`:
 
 ```cpp
-make<std::vector>(1, 2, 3)                  // std::vector<int>{1,2,3}   — plain CTAD
-make<std::vector, double>(1.0, 2.0)         // std::vector<double>       — arguments given
-make<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>  — PARTIAL CTAD
+$(ptr)->size()      // ptr->size()
+$(ptr).use_count()  // the holder's own vocabulary, on the dot surface
+```
+
+### Making a value: `$<F>` and partial CTAD
+
+`$(x)` adopts a value that exists; `$<F>(a…)` builds one. The two can never collide: a call with no
+explicit template arguments cannot deduce `F`, so `$(42)` only ever reaches the eager side.
+
+```cpp
+$<std::vector>(1, 2, 3)                  // std::vector<int>{1,2,3}   — plain CTAD
+$<std::vector, double>(1.0, 2.0)         // std::vector<double>       — arguments given
+$<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>  — PARTIAL CTAD
 ```
 
 The third line is the one C++ cannot otherwise spell: CTAD is all-or-nothing, so fixing *one*
@@ -264,15 +280,15 @@ by hand. A `_` in the list means **deduce this position**; everything else is fi
 parameters you never mention re-default as usual:
 
 ```cpp
-make<std::map, _, _, std::greater<>>(pairs…)          // deduce key and mapped type, fix the order
-make<std::unordered_map, _, _, _, _, MyAlloc>(p)      // deduce four, fix the allocator
+$<std::map, _, _, std::greater<>>(pairs…)          // deduce key and mapped type, fix the order
+$<std::unordered_map, _, _, _, _, MyAlloc>(p)      // deduce four, fix the allocator
 ```
 
 It works by deducing the whole specialization and then overlaying the positions you fixed. Deduction
 runs first and unmodified, so the deduced positions are exactly what plain CTAD would have given.
 
-`make` returns the **value itself**, not a lift of it: `auto v = make<std::vector>(1,2,3)` is a
-`std::vector` you can hand to anything. Wrap it in `lift`/`$` if you want the vocabulary.
+`$<F>(a…)` returns the **value itself**, not a wrapped one: `auto v = $<std::vector>(1,2,3)` is a
+`std::vector` you can hand to anything. Wrap it — `$($<F>(a…))` — if you want the vocabulary.
 
 Two limits, both the language's. `F` is a `template <class…> class`, so the `<class, size_t>`
 families (`array`, `span`) are out of reach — no loss, since their one type argument is all partial
@@ -285,7 +301,7 @@ what a comparator or hasher template parameter wants. `decltype` is the whole cr
 
 ```cpp
 std::set<int, decltype(_ > _)> s{3, 1, 2};        // descending — *s.begin() == 3
-make<std::set, _, decltype(_ > _)>(3, 1, 2);      // deduce the element, order by `>`
+$<std::set, _, decltype(_ > _)>(3, 1, 2);         // deduce the element, order by `>`
 static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));  // costs nothing
 ```
 
@@ -295,46 +311,18 @@ sections are built as capturing lambdas, and any capture deletes the default con
 a projection wants the value form anyway — `std::ranges::sort(v, {}, _.size())` — which needs no type
 at all.
 
-### `$` — the canonical short name
+### The conforming spellings: `lift` and `make`
 
-`$` is the canonical spelling of the term wrapper — `lift` and `make` under one symbol — and it
-lives in its own header, `<tacit/$.hpp>`. Including it is the opt-in; there is no macro:
-
-```cpp
-#include <tacit/$.hpp>   // brings <tacit/_.hpp> with it
-using tacit::_;
-using tacit::$;
-
-$(-42).abs()        // 42
-$("abc").length()   // 3
-$(v).size()         // ranges::size(v)
-```
-
-It is a **function**, not a macro — it keeps its namespace, obeys ADL, and claims nothing from the
-rest of the translation unit. `$(p)->f()` reaches through a handle to the pointee, mirroring `_->f()`:
-
-```cpp
-$(ptr)->size()      // ptr->size()
-$(ptr).use_count()  // the holder's own vocabulary, on the dot surface
-```
-
-`$` is a **one-hop lift**, not a fluent facade: a call hands back the operation's natural result, so
-`$(v).front()` is a `std::string&`. If you need two hops you are describing a computation, and that
-is `_`'s job — `_.front().size()(v)` says it better, and is reusable.
-
-Because `$` is a function *template*, `$<F>(a…)` is `make<F>(a…)` — the other closed cell, under the
-same short name. The two can never collide: a call with no explicit template arguments cannot deduce
-`F`, so `$(42)` only ever reaches the lift.
-
-```cpp
-$<std::vector>(1, 2, 3)                  // std::vector<int>
-$<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>
-```
-
-It is a separate header because `$` is not an identifier in standard C++ — a GCC/Clang extension,
+`$` has its own header because it is not an identifier in standard C++ — a GCC/Clang extension,
 rejected under `-pedantic-errors` — so `<tacit/_.hpp>` alone stays strictly conforming and never
-sees the character. Everything `$` spells is reachable conformingly as `tacit::lift` and
-`tacit::make`; nothing is `$`-only, and a `-pedantic-errors` build simply keeps to those names.
+sees the character. The same two functions exist there under conforming names: `tacit::lift(x)` is
+`$(x)`, and `tacit::make<F>(a…)` is `$<F>(a…)`. Nothing is `$`-only; a strict build simply keeps to
+those names.
+
+```cpp
+lift(v).size()                              // == $(v).size()
+make<std::set, _, std::greater<>>(3, 1, 2)  // == the $<> form above
+```
 
 ## λ — when you do need a lambda (opt-in)
 

@@ -152,35 +152,35 @@ int main() {
   std::ranges::for_each(thunks, _());
   assert(hits == 1);
 
-  // --- lift ---
-  assert(lift(std::vector{1, 2}).size() == 2);
-  assert(lift(-42).abs() == 42);
-  assert(lift("abc").length() == 3);
+  // --- $: the term wrapper ---
+  assert($(std::vector{1, 2}).size() == 2);
+  assert($(-42).abs() == 42);
+  assert($("abc").length() == 3);
   assert((_.abs() > 1)(-5));
+  assert($(sp)->size() == 3);
+  assert($(sp).use_count() >= 1);
 
-  // --- make ---
-  auto m1 = make<std::vector>(1, 2, 3);
+  // --- Making a value: $<F> and partial CTAD ---
+  auto m1 = $<std::vector>(1, 2, 3);
   static_assert(std::is_same_v<decltype(m1), std::vector<int>>);
-  auto m2 = make<std::vector, double>(1.0, 2.0);
+  auto m2 = $<std::vector, double>(1.0, 2.0);
   static_assert(std::is_same_v<decltype(m2), std::vector<double>>);
-  auto m3 = make<std::set, _, std::greater<>>(3, 1, 2);
+  auto m3 = $<std::set, _, std::greater<>>(3, 1, 2);
   assert(*m3.begin() == 3);
-  auto m4 = make<std::map, _, _, std::greater<>>(std::pair{1, 'a'}, std::pair{2, 'b'});
+  auto m4 = $<std::map, _, _, std::greater<>>(std::pair{1, 'a'}, std::pair{2, 'b'});
   assert(m4.begin()->first == 2);
+  assert($($<std::vector>(1, 2, 3)).size() == 3); // wrap it if you want the vocabulary
 
   // --- Closures as types ---
   std::set<int, decltype(_ > _)> s{3, 1, 2};
   assert(*s.begin() == 3);
+  assert(*($<std::set, _, decltype(_ > _)>(3, 1, 2)).begin() == 3);
   static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));
 
-  // --- $ ---
-  assert($(-42).abs() == 42);
-  assert($("abc").length() == 3);
-  assert($(std::vector{1, 2}).size() == 2);
-  assert($(sp)->size() == 3);
-  assert($(sp).use_count() >= 1);
-  assert(($<std::vector>(1, 2, 3)) == (std::vector{1, 2, 3}));
-  assert(*($<std::set, _, std::greater<>>(3, 1, 2)).begin() == 3);
+  // --- lift and make: the conforming spellings ---
+  assert(lift(std::vector{1, 2}).size() == $(std::vector{1, 2}).size());
+  assert(lift(-42).abs() == 42);
+  assert((make<std::set, _, std::greater<>>(3, 1, 2)) == ($<std::set, _, std::greater<>>(3, 1, 2)));
 
   // --- λ ---
   {
