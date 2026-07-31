@@ -3,7 +3,7 @@
 [![ci](https://github.com/ajg/tacit/actions/workflows/ci.yml/badge.svg)](https://github.com/ajg/tacit/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-BSL--1.0-blue.svg)](LICENSE)
 
-> **Status: experimental, pre-1.0.** The API may change, and it isn't released or announced yet.
+> **Status: pre-v1**, so there may be breaking changes or backwards incompatible additions or removals.
 
 A pithy C++23 library, header-only, for handing operations to algorithms with the least notation
 the language allows. The core surface is one object, `tacit::_`, whose members return closures that
