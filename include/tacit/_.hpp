@@ -8,9 +8,8 @@
 #define TACIT_VERSION_PATCH 0
 #define TACIT_VERSION (TACIT_VERSION_MAJOR * 10000 + TACIT_VERSION_MINOR * 100 + TACIT_VERSION_PATCH)
 // ============================================================================================
-//  _.hpp  —  a point-free "_" object with a first-class standard-library
-//  vocabulary, and a
-//            reusable core for deriving your own domain-specific placeholders
+//  _.hpp  —  the `_` object: closures from expressions, with a first-class
+//            standard-library vocabulary
 // ============================================================================================
 //
 //  `_` (a stateless global object of its own type `tacit::_`) whose members
@@ -89,10 +88,6 @@
 //  not `x.NAME()`), so
 //  `_.size()` / `_.begin()` also work on C arrays, string views, and
 //  third-party ranges.
-//
-//  ON THE NAME.  "tacit" is point-free programming; `_` is a "lieutenant" (French
-//  "lieu tenant" — literally "place-holding"), a stand-in, sidestepping the loaded
-//  English word "placeholder" (already spoken for by std::placeholders and `auto`).
 // ============================================================================================
 
 #include <algorithm>

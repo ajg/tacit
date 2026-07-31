@@ -71,10 +71,14 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
    braces stay, `return` stays), and the parked named-placeholder idea (`$x`/`$y` or `$1`/`$2` —
    NOT `a`..`z`, which shadow) are in `tacit_extras.md` under "λ: the lambda head".
 
-10. **OPEN — README reframing.** The README still pitches the library as point-free programming;
-    with `$` (eager wrapper/builder) canonical, λ (the lambda head), the type level, and the sigils,
-    it is more than that now. Reword the opening framing around the broader surface: one vocabulary,
-    several grammars — `_` for expressions, `$` for values, λ for statements.
+10. ~~README reframing.~~ **DONE** — the opening no longer pitches point-free programming; it now
+    matches the repo description ("a pithy C++ library to write pithy C++"): one vocabulary, three
+    grammars — `_` for expressions, `$` for values, `λ` for statements — with the two opt-in headers
+    introduced right after the headline example. The stale "ON THE NAME" gag at the end of the
+    `_.hpp` preamble (point-free + the already-removed lieutenant etymology) is gone, as is the
+    banner's promise of "deriving your own domain-specific placeholders" (also long removed).
+    "Point-free" survives only as a technical adjective deep in extras/tests where it describes
+    pipeline style, not identity.
 
 11. **OPEN — single-file distribution.** Decision pending (discussed, not settled): keep
     `include/tacit/` as canonical source and add a generated, committed `single/` with standalone

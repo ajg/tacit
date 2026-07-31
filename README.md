@@ -4,9 +4,9 @@
 
 > **Status: experimental, pre-1.0.** The API may change, and it isn't released or announced yet.
 
-A tiny, header-only library for **point-free (tacit) programming** in C++23. Its whole public surface
-is one object, `tacit::_`, whose members return closures that forward to a same-named operation on
-whatever they're later applied to — so you can hand operations to algorithms without writing lambdas.
+A pithy C++23 library, header-only, for handing operations to algorithms with the least notation
+the language allows. The core surface is one object, `tacit::_`, whose members return closures that
+forward to a same-named operation on whatever they're later applied to:
 
 ```cpp
 #include <tacit/_.hpp>
@@ -20,6 +20,11 @@ std::ranges::transform(words, out, _.size());
 `using tacit::_;` imports exactly one name. The vocabulary is reached *through* the object, the
 operator sections are hidden friends found by ADL, and everything else is a qualified `tacit::`
 helper.
+
+Two opt-in headers extend the reach, each by including it: `<tacit/$.hpp>` is the eager side —
+`$(x).f()` applies the same vocabulary now, `$<F>(a…)` builds a value — and `<tacit/λ.hpp>` is the
+lambda head, for what no expression can say. One vocabulary, three grammars: `_` for expressions,
+`$` for values, `λ` for statements.
 
 ## Requirements
 
@@ -123,7 +128,7 @@ combiner). Unary forms work too — `-_`, `!_`, `~_`, `*_` (deref), `++_` — as
 `_->size()`, which uses the pointee's real `operator->`.
 
 Its sibling `->*` keeps its natural meaning, member-pointer projection: `_ ->* &Widget::x` is
-`p -> (*p).x`. Since `.*` is not overloadable this is the only point-free spelling there is, so the
+`p -> (*p).x`. Since `.*` is not overloadable this is the only closure spelling there is, so the
 section falls back to deref-then-select where no built-in `->*` exists — smart pointers and
 iterators work, not just raw pointers. Data members only: `(*p).*pmf` is valid solely as a call
 head, so member *functions* stay with `_->f(args)`.
