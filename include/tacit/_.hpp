@@ -143,14 +143,18 @@ constexpr bool is_blank_v = [] {
 //
 // `fn`'s second parameter is its CHAIN STATE — see "comparison chains" below. Everything that is not a comparison
 // section builds `fn{f}`, i.e. `Last == nochain`: an ordinary, unchained projection.
-//  MSVC parses [[no_unique_address]] and silently IGNORES it (ABI freeze); the vendor spelling is
-//  honored. Without this, a closure built purely from `_` would not be EMPTY on MSVC, and the
-//  stateless-comparator guarantee (`std::set<int, decltype(_ > _)>` costing nothing) would quietly
-//  break — it did, until the MSVC CI leg caught it.
-#if defined(_MSC_VER) && !defined(__clang__)
+//  Anything targeting the MSVC ABI parses [[no_unique_address]] and silently IGNORES it (that ABI
+//  is frozen); the vendor spelling is the honored one. That covers MSVC AND clang-cl — hence the
+//  test is on the ATTRIBUTE, not the compiler: clang-cl defines __clang__ but obeys MSVC's rules,
+//  and a compiler check got it wrong (both CI legs caught it, in turn). Without this, a closure
+//  built purely from `_` is not EMPTY and the stateless-comparator guarantee — `std::set<int,
+//  decltype(_ > _)>` costing exactly what `std::set<int>` costs — quietly breaks.
+#if __has_cpp_attribute(msvc::no_unique_address)
 #define TACIT_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
-#else
+#elif __has_cpp_attribute(no_unique_address)
 #define TACIT_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#else
+#define TACIT_NO_UNIQUE_ADDRESS
 #endif
 
 struct nochain {};
