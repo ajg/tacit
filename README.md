@@ -269,9 +269,9 @@ $(ptr).use_count()  // the holder's own vocabulary, on the dot surface
 explicit template arguments cannot deduce `F`, so `$(42)` only ever reaches the eager side.
 
 ```cpp
-$<std::vector>(1, 2, 3)                  // std::vector<int>{1,2,3}   — plain CTAD
-$<std::vector, double>(1.0, 2.0)         // std::vector<double>       — arguments given
-$<std::set, _, std::greater<>>(3, 1, 2)  // std::set<int, greater<>>  — PARTIAL CTAD
+$<std::vector>(1, 2, 3)                  // vector<int>{1,2,3}  — plain CTAD
+$<std::vector, double>(1.0, 2.0)         // vector<double>      — arguments given
+$<std::set, _, std::greater<>>(3, 1, 2)  // set<int, greater<>> — PARTIAL CTAD
 ```
 
 The third line is the one C++ cannot otherwise spell: CTAD is all-or-nothing, so fixing *one*
@@ -280,8 +280,8 @@ by hand. A `_` in the list means **deduce this position**; everything else is fi
 parameters you never mention re-default as usual:
 
 ```cpp
-$<std::map, _, _, std::greater<>>(pairs…)          // deduce key and mapped type, fix the order
-$<std::unordered_map, _, _, _, _, MyAlloc>(p)      // deduce four, fix the allocator
+$<std::map, _, _, std::greater<>>(pairs…)      // deduce key and mapped, fix the order
+$<std::unordered_map, _, _, _, _, MyAlloc>(p)  // deduce four, fix the allocator
 ```
 
 It works by deducing the whole specialization and then overlaying the positions you fixed. Deduction
@@ -300,9 +300,10 @@ A closure built purely from `_` holds nothing, so it is **default-constructible 
 what a comparator or hasher template parameter wants. `decltype` is the whole crossing:
 
 ```cpp
-std::set<int, decltype(_ > _)> s{3, 1, 2};        // descending — *s.begin() == 3
-$<std::set, _, decltype(_ > _)>(3, 1, 2);         // deduce the element, order by `>`
-static_assert(sizeof(std::set<int, decltype(_ > _)>) == sizeof(std::set<int>));  // costs nothing
+std::set<int, decltype(_ > _)> s{3, 1, 2};   // descending — *s.begin() == 3
+$<std::set, _, decltype(_ > _)>(3, 1, 2);    // deduce the element, order by `>`
+static_assert(sizeof(std::set<int, decltype(_ > _)>)
+              == sizeof(std::set<int>));     // costs nothing
 ```
 
 Binding a *value* correctly forfeits this — `decltype(_ > 3)` is not default-constructible, because
@@ -335,8 +336,8 @@ follows in ordinary braces:
 #include <tacit/λ.hpp>
 
 std::ranges::sort(v, λ(a, b) { return a.size() < b.size(); });
-std::ranges::count_if(v, λ(s) { return s.size() * s.size() > 4u; })  // s used twice: `_` can't
-λ(s) -> decltype(auto) { return s.front(); }                         // your own trailing return
+std::ranges::count_if(v, λ(s) { return s.size() * s.size() > 4u; })  // s used twice
+λ(s) -> decltype(auto) { return s.front(); }   // your own trailing return
 ```
 
 Because the body never passes through the macro, it is plain C++ — commas, statements, multiple
@@ -476,7 +477,13 @@ interface with `-DTACIT_COMBINATORS` to have it export the combinators too. Veri
 
 ## Build & test
 
-Header-only — just add `include/` to your include path, or use CMake:
+**Single file:** each header in [`single/`](single/) is standalone — copy one file anywhere and
+include it, nothing else needed. `single/_.hpp` is the conforming core, `single/$.hpp` the full
+surface (it contains `_` too), `single/λ.hpp` the lambda head; `_` and `$` may be mixed in either
+order. They are generated from `include/tacit/` by `tools/amalgamate` — CI regenerates and diffs, so
+they cannot drift; don't edit them.
+
+Otherwise, header-only as usual — add `include/` to your include path, or use CMake:
 
 ```cmake
 add_subdirectory(tacit)

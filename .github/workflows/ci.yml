@@ -64,6 +64,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - name: Single-file headers are fresh and standalone
+        # tools/amalgamate is the only writer of single/; regenerate + diff makes drift impossible,
+        # and the reverse-order probe covers what the ctest single_check (natural order) cannot.
+        run: |
+          python3 tools/amalgamate
+          git diff --exit-code single/
+          printf '#include "$.hpp"\n#include "_.hpp"\nusing tacit::_; using tacit::$;\nint main() { return ($(-1).abs() == 1 && (_ * 2)(21) == 42) ? 0 : 1; }\n' > /tmp/rev.cpp
+          g++-13 -std=c++23 -Wall -Wextra -I single /tmp/rev.cpp -o /tmp/rev && /tmp/rev
+          printf '#include "_.hpp"\nusing tacit::_;\nint main() { return (_ == 0)(0) ? 0 : 1; }\n' > /tmp/strict.cpp
+          g++-13 -std=c++23 -pedantic-errors -I single /tmp/strict.cpp -o /tmp/strict && /tmp/strict
       - name: Consume via add_subdirectory (FetchContent / CPM path)
         run: |
           cmake -S tests/packaging -B build-pkg -DCMAKE_CXX_COMPILER=g++-13

@@ -84,9 +84,11 @@ and exposes `TACIT_HAS_STD_TUPLE_BLANKS` to feature-test it. Only `tuple` is mar
     "Point-free" survives only as a technical adjective deep in extras/tests where it describes
     pipeline style, not identity.
 
-11. **OPEN — single-file distribution.** Decision pending (discussed, not settled): keep
-    `include/tacit/` as canonical source and add a generated, committed `single/` with standalone
-    `_.hpp` and `$.hpp` (core inlined behind a shared content guard so both coexist in one TU), a
-    ~30-line amalgamation script, and a CI regenerate-and-diff check. λ.hpp needs none of this (born
-    single-file); std_blanks stays repo-only. Modules are orthogonal — the `.cppm` GMFs always
-    resolve includes at interface-build time.
+11. ~~Single-file distribution.~~ **DONE (option A)** — `include/tacit/` stays canonical;
+    `single/` holds generated, committed standalone forms of `_`, `$`, and `λ` (the shared core
+    wrapped in `TACIT_SINGLE_CORE_SEEN`, so `_`+`$` coexist in one TU either order; λ is
+    pass-through). `tools/amalgamate` (python3) is the only writer; CI regenerates + diffs (drift
+    impossible), compiles the reverse include order and a `-pedantic-errors` probe, and the ctest
+    `single_check` target builds against `single/` alone (not linked to tacit::tacit, so the include
+    path proves standalone-ness) on every matrix leg. std_blanks stays repo-only; modules are
+    orthogonal (`.cppm` GMFs resolve at interface-build time; `single/` never participates).
