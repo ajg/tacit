@@ -172,6 +172,16 @@ constexpr bool is_blank_v = [] {
 //
 // `fn`'s second parameter is its CHAIN STATE — see "comparison chains" below. Everything that is not a comparison
 // section builds `fn{f}`, i.e. `Last == nochain`: an ordinary, unchained projection.
+//  MSVC parses [[no_unique_address]] and silently IGNORES it (ABI freeze); the vendor spelling is
+//  honored. Without this, a closure built purely from `_` would not be EMPTY on MSVC, and the
+//  stateless-comparator guarantee (`std::set<int, decltype(_ > _)>` costing nothing) would quietly
+//  break — it did, until the MSVC CI leg caught it.
+#if defined(_MSC_VER) && !defined(__clang__)
+#define TACIT_NO_UNIQUE_ADDRESS [[msvc::no_unique_address]]
+#else
+#define TACIT_NO_UNIQUE_ADDRESS [[no_unique_address]]
+#endif
+
 struct nochain {};
 // A closure of more than one fill (`_ < _`, `_.size() < _`, `_ , _`'s operator siblings). It rides in the same slot as
 // the chain state because the two never coexist: a two-input form has no rightmost-operand to fold against. The point
@@ -969,14 +979,14 @@ namespace detail {
 // carries the same std vocabulary as `_` — but every member COMPOSES through the wrapped projection, so
 // `_.front().size()` == `x -> size(front(x))`: that is member chaining.
 template <class F, class Last> struct fn {
-  // `[[no_unique_address]]` so a closure built purely from `_` is genuinely EMPTY, not merely small. `_ > _` wraps a
+  // TACIT_NO_UNIQUE_ADDRESS so a closure built purely from `_` is genuinely EMPTY, not merely small. `_ > _` wraps a
   // captureless lambda, and an empty `fn` means `std::set<int, decltype(_ > _)>` pays nothing for its comparator — the
   // container's empty-base optimisation applies exactly as it does for `std::greater<>`. Without this the two members
   // would occupy a byte each and every such container would grow.
-  [[no_unique_address]] F f;
+  TACIT_NO_UNIQUE_ADDRESS F f;
   // Chain state: `nochain` for every projection that is not a comparison section. See "comparison chains" above —
   // `last` recovers the rightmost operand of the comparison this `fn` represents.
-  [[no_unique_address]] Last last{}; // (the initializer keeps plain `fn{f}` warning-clean)
+  TACIT_NO_UNIQUE_ADDRESS Last last{}; // (the initializer keeps plain `fn{f}` warning-clean)
   static constexpr bool chained = !std::is_same_v<Last, nochain> && !std::is_same_v<Last, nary>;
 
   template <class... A>
@@ -1296,7 +1306,7 @@ struct star2_tag {}; // from `**`      — the product half of `***`
 // Both are needed, because `f &&& g` must read `g` as itself while `(&g)(x)` must still take an
 // address.
 template <class Tag, class F, class G> struct marked : fn<F, nochain> {
-  [[no_unique_address]] G inner;
+  TACIT_NO_UNIQUE_ADDRESS G inner;
 };
 template <class Tag, class G, class F> [[nodiscard]] constexpr auto mark(G inner, F f) {
   return marked<Tag, F, G>{{f}, inner};
@@ -2115,6 +2125,7 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 #undef TACIT_CPO2
 #undef TACIT_FREE1
 #undef TACIT_STD_FREES
+#undef TACIT_NO_UNIQUE_ADDRESS
 #undef TACIT_SECTION
 #undef TACIT_COMPARE
 #undef TACIT_MEMPTR

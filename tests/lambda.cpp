@@ -38,13 +38,17 @@ int main() {
     assert(add(2)(3) == 5);
   }
 
-  // ---- ASCII spellings: a UCN-spelled identifier IS the identifier, macro replacement included ----
+  // ---- ASCII spellings: a UCN-spelled identifier IS the identifier, macro replacement included.
+  // MSVC has not implemented that equivalence (P2314): the glyph works there, these spellings
+  // don't, so this section is clang/GCC-only. ----
+#if !defined(_MSC_VER) || defined(__clang__)
   {
     assert(\u03BB(x) { return x * 2; }(21) == 42);   // the classic 4-hex form
 #if __cplusplus >= 202302L
     assert(\u{3BB}(a, b) { return a + b; }(40, 2) == 42); // the C++23 delimited form
 #endif
   }
+#endif // !_MSC_VER
 
   // ---- the trailing-return slot is open: opt into reference preservation per site ----
   {

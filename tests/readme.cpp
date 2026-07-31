@@ -196,7 +196,9 @@ int main() {
     std::ranges::sort(lv, λ(a, b) { return a.size() < b.size(); });
     assert(lv[0] == "a");
     assert(std::ranges::count_if(lv, λ(s) { return s.size() * s.size() > 4u; }) == 1);
+#if !defined(_MSC_VER) || defined(__clang__) // MSVC lacks P2314 UCN/glyph macro equivalence
     assert(\u{3BB}(s) { return s.front(); }(lv[1]) == lv[1].front()); // ASCII spelling, same macro
+#endif
     λ(s) -> decltype(auto) { return s.front(); }(lv[0]) = 'z';
     assert(lv[0] == "z");
   }

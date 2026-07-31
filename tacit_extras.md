@@ -1019,7 +1019,8 @@ allows exactly one thing after `\`: a *universal-character-name*. That turns out
     \u{3BB}(a, b) { return a + b; }  // macro replacement included (delimited form is C++23, P2290)
 
 so λ is invocable from pure ASCII source, conformingly. (C++23's P2314 is what pinned glyph/UCN
-macro interchangeability after earlier implementation divergence.) The spelling cannot get shorter
+macro interchangeability after earlier implementation divergence — and MSVC is still divergent as
+of v19.5x: the glyph works there, the UCN spellings do not find the macro.) The spelling cannot get shorter
 than `\u{3BB}` *for λ*: a UCN may not designate a basic-charset character (`\u{41}` is a hard error,
 so no ASCII names), leaving the Latin-1 letters as the two-hex-digit floor — `\u{aa}` (ª, the lowest
 XID_Start above ASCII) and `\u{b5}` (µ) both work as macro names, saving exactly one character over
