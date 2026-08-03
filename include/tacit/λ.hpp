@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Alvaro J. Genial
 // SPDX-License-Identifier: BSL-1.0
 #pragma once
 

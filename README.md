@@ -579,5 +579,8 @@ listed in [ASKS.md](ASKS.md): solve one, or break a proof, and it's yours.
 
 ## License
 
+Copyright (c) 2026 Alvaro J. Genial — <https://github.com/ajg/tacit>
+
 Boost Software License 1.0 — see [LICENSE](LICENSE). Chosen for header-only friendliness: the notice
-is required only in source distributions, not in binaries.
+is required only in source distributions, not in binaries. If you vendor a header, keep its two SPDX
+lines: BSL-1.0 requires the copyright notices to travel with every copy and derivative work.

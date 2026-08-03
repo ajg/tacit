@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Alvaro J. Genial
 // SPDX-License-Identifier: BSL-1.0
 // C++20 module interface for tacit. It wraps the headers in the global module fragment and
 // re-exports the public names — no second copy of the code, and nothing here that the headers do
