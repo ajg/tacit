@@ -277,9 +277,7 @@ gives a plain value the vocabulary it may not have as members and applies it eag
 builds a value. It lives in `<tacit/$.hpp>`, and including the header is the opt-in — no macro:
 
 ```cpp
-#include <tacit/$.hpp>   // include what you use — $.hpp happens to pull _.hpp
-#include <tacit/_.hpp>   // in today, but don't lean on that
-using tacit::_;
+#include <tacit/$.hpp>
 using tacit::$;
 
 $(v).size()         // ranges::size(v) — even where v.size() doesn't exist
