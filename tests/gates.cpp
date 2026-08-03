@@ -1,5 +1,5 @@
 // Every opt-in at once: TACIT_SIGILS + TACIT_VIEWS + TACIT_VERBS + TACIT_NOUNS,
-// through <tacit/$.hpp>, with the std blanks and λ riding along. The individual gates each have
+// through <tacit/$.hpp>, with the type level and λ riding along. The individual gates each have
 // their own test; what this file pins is that they COMPOSE — no gate's machinery (sigil markers,
 // view verbs, taught names) breaks another's.
 #define TACIT_SIGILS
@@ -8,7 +8,6 @@
 #define TACIT_NOUNS shape
 #include <tacit/$.hpp>
 #include <tacit/_.hpp>
-#include <tacit/experimental/std_blanks.hpp>
 #include <tacit/λ.hpp>
 
 #include <cassert>
@@ -33,7 +32,7 @@ int main() {
   std::vector<int> v{1, 2, 3};
   auto piped = _.filter(_ > 1).take(1)(v);                        // view verbs chain
   assert(*std::ranges::begin(piped) == 2);
-  static_assert(std::is_same_v<std::vector<_::blank<>>::with<int>, std::vector<int>>); // std blank
+  static_assert(std::is_same_v<tacit::bind<std::vector, _::blank<>>::with<int>, std::vector<int>>); // type level
   assert($(-1).abs() == 1);                                       // $, same TU
   assert(λ(x) { return x + 1; }(41) == 42);                       // λ, same TU
   return 0;

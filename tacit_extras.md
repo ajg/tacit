@@ -3,10 +3,10 @@
 Design notes for the pieces that sit *around* the core `_` object: what's implemented, why it's
 shaped the way it is, and what's still on the table. The default public surface is `tacit::_` plus the
 opt-in type-level `tacit::bind` / `tacit::apply` / `tacit::quote` and the named combinators
-(`compose`/`fanout`/..., qualified-only, ungated); `$` (canonical short name for `lift`/`make`) is opt-in by include,
-`<tacit/$.hpp>`, as are the natural-spelling std blanks, `<tacit/experimental/std_blanks.hpp>`, and
-the lambda head `λ`, `<tacit/λ.hpp>` (standalone). Everything here is either already in one of those
-headers or a candidate for them.
+(`compose`/`fanout`/..., qualified-only, ungated); `$` (canonical short name for `lift`/`make`) is
+opt-in by include, `<tacit/$.hpp>`, as is the lambda head `λ`, `<tacit/λ.hpp>` (standalone).
+Everything here is either already in one of those headers, a candidate for them, or — where it says
+so — something that was built and then taken back out, with the reasoning kept.
 
 ## Composition (implemented)
 
@@ -358,12 +358,22 @@ packs impose (a template can't sit in a type slot unquoted); a C++26 reflection 
 templates and types both become `std::meta::info` and the slot list stops needing the wrapper. Naming
 (`apply` / `quote`) is provisional — the mechanism is what's settled, not the spelling.
 
-**Type-level: natural spelling via std blanks** *(implemented, opt-in by include —
-`<tacit/experimental/std_blanks.hpp>` — experimental)* —
-the sugar tier: `std::map<struct _, int>::with<char>` reading as itself, no `quote`/`apply` ceremony.
-It works by injecting partial specializations of common containers (`vector`, `set`, `map`, `pair`,
-`tuple`) into `namespace std`, each keyed on the blank type and exposing a `::with<...>`. Four facts,
-all verified on g++-13 / clang-18, fix its exact shape and are why it's off by default:
+**Type-level: natural spelling via std blanks** *(built, then **REMOVED** pre-1.0 — the notes below
+are kept because the findings outlive the code)* — the sugar tier: `std::map<struct _, int>::with<char>`
+reading as itself, no `quote`/`apply` ceremony. It worked by injecting partial specializations of
+common containers (`vector`, `set`, `map`, `pair`, `tuple`) into `namespace std`, each keyed on the
+blank type and exposing a `::with<...>`.
+
+*Why it went.* It was [namespace.std] deviancy — a specialization of a std class template for
+`tacit::_` does not meet the original template's requirements, so it is ill-formed NDR no matter how
+well it runs — and the standard library started enforcing exactly that: libc++ 21 puts
+`[[clang::no_specializations]]` on `std::tuple`, which cost a `TACIT_HAS_STD_TUPLE_BLANKS` carve-out,
+and there is no reason to expect that trend to stop. It also charged a real tax inside the core: the
+`operator,(self, self)` overload had to be a template purely so the header parse would not
+instantiate `std::tuple<_, _>` and ambiguate the specialization. A sugar tier that is
+standards-illegal, shrinking under library hardening, and reaching back into the core is a bad
+trade for a spelling. The portable `bind`/`apply`/`quote` grain covers the same ground with a
+`quote<>` at the call site. The findings below stand, and fix the exact shape it had:
 
 - *The blank must be elaborated.* A template argument names the value `_` first, so a bare `_` is a
   non-type argument where a type is wanted; the specializations key on `struct ::tacit::_` (and callers

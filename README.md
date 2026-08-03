@@ -405,9 +405,8 @@ Two more surfaces exist and are deliberately *not* documented here. **Synthetic 
 (`#define TACIT_SIGILS`) add Haskell's arrow spellings as glued token sequences — `f &&& g` fanout,
 `f *** g` product, `f >>* g` / `f <<* g` compose — with the full maximal-munch sweep, the costs, and
 the precedence rules in `tacit_extras.md`. The **experimental type level** (`bind`/`apply`/`quote`,
-and `std::map<struct _, int>::with<char>` via `<tacit/experimental/std_blanks.hpp>`) lives in the
-same file, along with the design log for everything above. That file is the lab notebook; this one
-is the manual.
+ungated and always present) lives in the same file, along with the design log for everything above.
+That file is the lab notebook; this one is the manual.
 
 ## Teach `_` your own names
 
@@ -477,11 +476,12 @@ purpose: the `_.hpp` / `$.hpp` split exists because `#include` injects *tokens* 
 `$.hpp` lexes `$`, which `-pedantic-errors` rejects), but an `import` injects only *names*, and a
 name costs nothing until you spell it. A strictly-conforming TU can `import tacit;` and keep to
 `lift`/`make` — CI compiles exactly that consumer with `-pedantic-errors` against the `$`-bearing
-interface. If even the *interface* must build strictly, `-DTACIT_NO_DOLLAR` drops `$` from it (also
-CI-proven).
+interface. The one TU that does lex `$` is `tacit.cppm` itself, so build that file without
+`-pedantic-errors`; there is no knob for it, deliberately, since a knob there would make two
+different modules answering to the same `import tacit;`.
 
 ```cpp
-import tacit;   // _, $, lift, make, bind, apply, quote
+import tacit;   // _, $, lift, make, blank, bind, apply, quote
 using tacit::_;
 using tacit::$;
 ```
@@ -523,13 +523,11 @@ exists to make that mechanical.
 
 ## Build & test
 
-**Single file:** each header in [`single/tacit/`](single/tacit/) is standalone — copy one file into
-your tree and nothing else is needed. Keep it under a `tacit/` directory and the include spelling
-never changes: `#include <tacit/_.hpp>` means the same thing whether it came from `include/` or from
-one vendored file. `_.hpp` is the conforming core, `$.hpp` the full surface (it contains `_` too),
-`λ.hpp` the lambda head; `_` and `$` may be mixed in either order. They are generated from
-`include/tacit/` by `tools/amalgamate` — CI regenerates and diffs, so they cannot drift; don't edit
-them.
+**Vendoring:** the library is three files, and they are the distribution — there is nothing to
+generate. Copy [`include/tacit/_.hpp`](include/tacit/_.hpp) into your tree, keep it under a `tacit/`
+directory, and `#include <tacit/_.hpp>` works. [`λ.hpp`](include/tacit/λ.hpp) is likewise
+copy-one-file. [`$.hpp`](include/tacit/$.hpp) wants only its sibling `_.hpp` next to it — copy both.
+CI builds from a bare directory with the repo's include path absent, so those claims stay true.
 
 Otherwise, header-only as usual — add `include/` to your include path, or use CMake:
 

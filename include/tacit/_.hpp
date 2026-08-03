@@ -694,9 +694,9 @@ TACIT_STD_TFREES(TACIT_ADL_TFN)
   }                                                                                                                    \
   /* a template, not a plain friend: a non-template body with a deduced return type is compiled                        \
      with the class, which would instantiate comma_section<self, self> — and so std::tuple<_, _> —                     \
-     during the header parse, ambiguating the std::tuple specialisation a later include of                             \
-     <tacit/experimental/std_blanks.hpp> declares. As a template it is instantiated on use, like                       \
-     every other comma overload. */                            \
+     during the header parse rather than on use. Nothing depends on that any more (the std-blank                       \
+     header that once collided with it is gone), but instantiating on use is what every other comma                    \
+     overload does, and a header that parses without instantiating tuples is worth keeping. */                         \
   template <class = void>                                                                                              \
   [[nodiscard]] friend constexpr auto operator,(self a, self b) {                                                      \
     return tacit::detail::make_comma(a, b);                                                                            \
@@ -1975,12 +1975,65 @@ template <template <class...> class F, class... Fixed, class... A> [[nodiscard]]
 }
 } // namespace detail
 
-// The overload-set generator lives in its own (guard-free, macro-only) header so <tacit/$.hpp> can
-// replay it verbatim as `$` — same shapes, no repetition, no include-order sensitivity. It is
-// consumed and #undef'd here like every other generator.
-#include "detail/make_overloads.hpp"
+// The `make` overload-set generator. TACIT_MKN(NAME) emits `NAME<F, ...>(a...)` ==
+// partial CTAD: every `tacit::blank<>` (a `_` among the explicit template arguments arrives as one)
+// means "deduce this position", to depth four. The engine is `detail::make_` above; these macros
+// only spell the sixteen type/value parameter shapes the language cannot express as one variadic
+// signature — a single pack cannot mix type and non-type parameters, the same kind wall the
+// type-level notes describe.
+//
+// <tacit/$.hpp> carries a VERBATIM COPY of this block to emit the same sixteen shapes as `$`. That
+// is deliberate duplication: C++ has no way to give an existing function-template overload set a
+// second name (`using` preserves the name), and `$` cannot forward to `make` through one signature
+// for the same kind reason the shapes exist. The copies are pinned against drift by
+// `tests/callables.cpp`, which asserts `make` and `$` accept identical shapes and yield identical
+// types; change one, change both, and that test will tell you if you didn't.
+//
+// Line continuations are deliberately unaligned: this is a table, edited by adding rows, and a
+// column max turns every row edit into a reflow of its neighbours.
+#define TACIT_MKU(...) __VA_ARGS__ /* strip one layer of parens */
+/* Position n of a shape, in the two places it has to appear. C = a fixed Class, S = a deducing
+   Slot; P spells the template PARAMETER, F the entry in the FIXED list handed to `make_`. */
+#define TACIT_PC(n) class A##n
+#define TACIT_PS(n) tacit::detail::blank_value auto A##n
+#define TACIT_FC(n) A##n
+#define TACIT_FS(n) tacit::blank<>
+#define TACIT_MK(NAME, PARAMS, FIXED) \
+  template <template <class...> class F, TACIT_MKU PARAMS, class... B> \
+  [[nodiscard]] constexpr auto NAME(auto &&...a) { \
+    return tacit::detail::make_<F, TACIT_MKU FIXED, B...>(static_cast<decltype(a)>(a)...); \
+  }
+#define TACIT_MK1(N, a) TACIT_MK(N, (TACIT_P##a(0)), (TACIT_F##a(0)))
+#define TACIT_MK2(N, a, b) TACIT_MK(N, (TACIT_P##a(0), TACIT_P##b(1)), (TACIT_F##a(0), TACIT_F##b(1)))
+#define TACIT_MK3(N, a, b, c) \
+  TACIT_MK(N, (TACIT_P##a(0), TACIT_P##b(1), TACIT_P##c(2)), (TACIT_F##a(0), TACIT_F##b(1), TACIT_F##c(2)))
+#define TACIT_MK4(N, a, b, c, d) \
+  TACIT_MK(N, (TACIT_P##a(0), TACIT_P##b(1), TACIT_P##c(2), TACIT_P##d(3)), \
+           (TACIT_F##a(0), TACIT_F##b(1), TACIT_F##c(2), TACIT_F##d(3)))
+/* The table: arity, then one letter per position. Every row ends in S — a TRAILING fixed type needs
+   no overload of its own, it rides the variadic tail — so the rows are the binary count over the
+   positions before it: 1 + 2 + 4 + 8 = 15, plus the no-prefix base case = the sixteen shapes. */
+#define TACIT_MKN(NAME) \
+  template <template <class...> class F, class... B> [[nodiscard]] constexpr auto NAME(auto &&...a) { \
+    return tacit::detail::make_<F, B...>(static_cast<decltype(a)>(a)...); \
+  } \
+  TACIT_MK1(NAME, S) \
+  TACIT_MK2(NAME, C, S) \
+  TACIT_MK2(NAME, S, S) \
+  TACIT_MK3(NAME, C, C, S) \
+  TACIT_MK3(NAME, S, C, S) \
+  TACIT_MK3(NAME, C, S, S) \
+  TACIT_MK3(NAME, S, S, S) \
+  TACIT_MK4(NAME, C, C, C, S) \
+  TACIT_MK4(NAME, S, C, C, S) \
+  TACIT_MK4(NAME, C, S, C, S) \
+  TACIT_MK4(NAME, S, S, C, S) \
+  TACIT_MK4(NAME, C, C, S, S) \
+  TACIT_MK4(NAME, S, C, S, S) \
+  TACIT_MK4(NAME, C, S, S, S) \
+  TACIT_MK4(NAME, S, S, S, S)
 
-TACIT_MAKE_OVERLOADS(make)
+TACIT_MKN(make)
 
 // Heterogeneous element combinators: drive a callable over the elements of a tuple-like. Built on std::apply +
 // fold-expressions (C++23); a `template for` (C++26) path can later extend them to arbitrary aggregates and reflection
@@ -2010,14 +2063,11 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 
 } // namespace tacit
 
-// Two surfaces deliberately live in sibling headers rather than here:
-//   - `$` — the canonical short name for the term wrapper (`$(x)` == `lift(x)`, `$<F>(a...)` ==
-//     `make<F>(a...)`) — is in <tacit/$.hpp>. `$` in an identifier is a GCC/Clang extension,
-//     rejected under `-pedantic-errors`, so including that header IS the opt-in and this one stays
-//     strictly conforming. Nothing is `$`-only: `lift`/`make` here are the same functions.
-//   - The natural-spelling std blanks (`std::map<struct _, int>::with<char>`, experimental) are in
-//     <tacit/experimental/std_blanks.hpp> — they specialize std templates, which is [namespace.std]
-//     deviancy this header will not carry.
+// One surface deliberately lives in a sibling header rather than here: `$` — the canonical short
+// name for the term wrapper (`$(x)` == `lift(x)`, `$<F>(a...)` == `make<F>(a...)`) — is in
+// <tacit/$.hpp>. `$` in an identifier is a GCC/Clang extension, rejected under `-pedantic-errors`,
+// so including that header IS the opt-in and this one stays strictly conforming. Nothing is
+// `$`-only: `lift`/`make` here are the same functions.
 
 // The default path exports exactly one name, `tacit::_`; a single `using tacit::_;` is all a
 // caller needs — the vocabulary is reached through the object and the operator sections are hidden friends found by
@@ -2039,11 +2089,17 @@ template <class Tup, class F> [[nodiscard]] constexpr auto transform_elements(Tu
 #undef TACIT_MARK_STAR
 #undef TACIT_UNARY_AS
 #undef TACIT_FN_UNARY_AS
-#undef TACIT_UNPAREN
-#undef TACIT_MAKE_BLANK
-#undef TACIT_MAKE_SLOT
-#undef TACIT_MAKE_ONE
-#undef TACIT_MAKE_OVERLOADS
+#undef TACIT_MKU
+#undef TACIT_PC
+#undef TACIT_PS
+#undef TACIT_FC
+#undef TACIT_FS
+#undef TACIT_MK
+#undef TACIT_MK1
+#undef TACIT_MK2
+#undef TACIT_MK3
+#undef TACIT_MK4
+#undef TACIT_MKN
 #undef TACIT_MEMBER
 #undef TACIT_ARROW_MEMBER
 #undef TACIT_VIEW

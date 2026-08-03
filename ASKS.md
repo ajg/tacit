@@ -9,9 +9,11 @@ them impossible — open an issue or a PR; being proven wrong here is the good o
 The white whale. `_` is an object; we want the *same name* to also work at the type level —
 `_<int>`, or `std::map<_, int>` with a bare `_`. Every route we know hits the same wall: **a name is
 one kind of entity per scope**, and `<` after a bare name demands that the name be a template. What
-exists today is the conforming consolation tier — `_::blank<>`, `bind`/`apply`/`quote`, and
-`std::map<struct _, int>::with<char>` (experimental) — all documented under *Four quadrants* in
-`tacit_extras.md`, along with everything that failed and why.
+exists today is the conforming consolation tier — `_::blank<>` and `bind`/`apply`/`quote` —
+documented under *Four quadrants* in `tacit_extras.md`, along with everything that failed and why.
+(A sugar tier that made `std::map<struct _, int>::with<char>` read as itself was built and then
+removed: it specialized std templates, which is ill-formed NDR and is now actively blocked by
+libc++. The notes are still in `tacit_extras.md` if you want to know what that cost.)
 
 What a win looks like: any spelling where `_` (that `_`, not a cousin) names both the value and a
 type-level blank, on any conforming compiler — or a language-evolution path that gets there

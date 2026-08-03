@@ -7,10 +7,9 @@ the things we *couldn't* do — are in ASKS.md.)
 
 Repo state: private, v0.5.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
 AppleClang, plus modules (clang, with strict-consumer and strict-interface legs) and packaging
-(with the single/ freshness gate). 29 ctest targets; Intel ICX and EDG spot-checked via Compiler
-Explorer. The
-`typeapply` local failure on Apple clang is resolved: libc++ 21 hard-bans specializing `std::tuple`,
-so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS`.
+(with the vendor-by-copy gate). 29 ctest targets; Intel ICX and EDG spot-checked via Compiler
+Explorer. `include/tacit/` is exactly three files — `_.hpp`, `$.hpp`, `λ.hpp` — and they ARE the
+distribution: no generator, no second copy, nothing to keep fresh.
 
 
 1. ~~blank vs hole terminology.~~ **DONE** — `blank` everywhere; `hole<A...>` is now `blank<A...>`,
@@ -49,15 +48,17 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
 6. ~~Split `_` and `$` into `_.hpp` and `$.hpp`.~~ **DONE** — the fork resolved toward `$.hpp`
    including `_.hpp`: `$`-without-`_` was never a real use case (`$<std::set, _, ...>` has `_` in its
    own examples), so no build step and no duplication. The one mechanical obstacle — `_.hpp` #undefs
-   its generators — is solved by `detail/make_overloads.hpp`, a guard-free macro-only header both
-   public headers include and clean up; include order is immaterial and each header stays macro-clean.
+   its generators — was solved by `detail/make_overloads.hpp`, a guard-free macro-only header both
+   public headers included and cleaned up; include order was immaterial and each header stayed
+   macro-clean. (That shared file is gone as of #21; the table is now duplicated on purpose.)
    The module story then SIMPLIFIED rather than mirrored: a separate `tacit.dollar` module existed
    briefly, but the split's reason — `#include` injects tokens, and lexing `$` is what
    `-pedantic-errors` rejects — does not survive `import`, which injects only names. So one `tacit`
    module exports `$` too; a strict consumer just never spells it (CI compiles such a consumer with
-   `-pedantic-errors` against the `$`-bearing interface), and `-DTACIT_NO_DOLLAR` strips the
-   interface for builds that must compile even it strictly. The std `namespace` deviancy
-   moved out the same way: `<tacit/experimental/std_blanks.hpp>`, opt-in by include, no macro.
+   `-pedantic-errors` against the `$`-bearing interface). `-DTACIT_NO_DOLLAR` briefly also stripped
+   the interface for builds that must compile even IT strictly; that knob is gone as of #21. The std `namespace` deviancy
+   moved out the same way at the time — `<tacit/experimental/std_blanks.hpp>`, opt-in by include,
+   no macro — though that header has since been removed outright (see #20).
    `TACIT_DOLLAR`, `TACIT_STD_BLANKS` and `TACIT_USING_UNDERSCORE` are all gone — the first two
    replaced by their headers, the last dropped (`using tacit::_;` is good enough).
 
@@ -91,18 +92,12 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     "Point-free" survives only as a technical adjective deep in extras/tests where it describes
     pipeline style, not identity.
 
-11. ~~Single-file distribution.~~ **DONE (option A)** — `include/tacit/` stays canonical;
-    `single/tacit/` holds generated, committed standalone forms of `_`, `$`, and `λ` (the shared
-    core wrapped in `TACIT_SINGLE_CORE_SEEN`, so `_`+`$` coexist in one TU either order; λ is
-    pass-through). The outputs keep their `tacit/` directory deliberately: `#include <tacit/_.hpp>`
-    is the *only* include spelling tacit ever asks for, and a vendored single file must not
-    introduce a second one — put `single/tacit/` on the include path and the source is unchanged.
-    `tools/amalgamate` (python3) is the only writer; CI regenerates + diffs (drift impossible),
-    compiles the reverse include order and a `-pedantic-errors` probe, and the ctest `single_check`
-    target builds against `single/` alone (not linked to tacit::tacit, so the include path proves
-    standalone-ness, and an `#error` on the absent guard proves it resolved to the amalgamated file
-    rather than the repo one) on every matrix leg. std_blanks stays repo-only; modules are
-    orthogonal (`.cppm` GMFs resolve at interface-build time; `single/` never participates).
+11. ~~Single-file distribution.~~ **DONE, then SUPERSEDED by #21** — the shipped answer was option
+    A: `include/tacit/` canonical, `single/tacit/` holding generated, committed standalone forms of
+    `_`, `$`, and `λ`, written only by `tools/amalgamate` (python3) and kept honest by a CI
+    regenerate-and-diff. It worked, and the `tacit/` subdirectory in the output was the right call
+    (one include spelling, always). It stopped being worth its weight once `detail/` was inlined and
+    the canonical headers became standalone themselves — see #21.
 
 12. ~~Pre-announcement readiness review.~~ **DONE** — two fresh-eyes reviews (README-as-first-contact
     and a hostile header read) plus mechanical probes (compile cost ~0.1s over a std baseline,
@@ -179,3 +174,70 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     keyword, and a section called Concepts in a C++ library's README reads as a page about
     `requires`-clauses. "Notation" is also just more accurate: blanks, vocabulary, sections,
     composition, and application are the notation the library adds.
+
+20. ~~The std blanks (`experimental/`).~~ **REMOVED** — `std::map<struct _, int>::with<char>` was
+    the sugar tier of the type level, and it worked by specializing std class templates for the
+    blank type. That is [namespace.std] deviancy — ill-formed NDR however well it runs — and the
+    library is now enforcing it: libc++ 21's `[[clang::no_specializations]]` on `std::tuple` had
+    already forced a `TACIT_HAS_STD_TUPLE_BLANKS` carve-out, and nothing suggests that trend
+    reverses. It was also charging rent in the core, where `operator,(self, self)` had to be a
+    template purely so the header parse would not instantiate `std::tuple<_, _>` and ambiguate the
+    specialization. Removing it takes `include/tacit/experimental/` with it, and the portable
+    `bind`/`apply`/`quote` grain still reaches every shape it did, at the cost of a `quote<>` at the
+    call site. The one thing genuinely lost is value-parameterized templates (`std::array<struct _,
+    5>::with<int>`): a template-template parameter is `template <class...>`, so a `<class, size_t>`
+    head has no slot in the general primitive — noted in ASKS. The design notes are kept in
+    `tacit_extras.md`, marked as removed, because the findings outlive the code.
+
+21. ~~`detail/`, `single/`, and the build step.~~ **ALL GONE** — with `experimental/` removed (#20),
+    the whole intra-library include graph was three edges: `$.hpp → _.hpp`, and both public headers
+    → `detail/make_overloads.hpp`. That last file is the sixteen-shape partial-CTAD generator, and
+    it was shared rather than duplicated because C++ gives no way to hand an existing
+    function-template overload set a second name (`using` preserves the name, and `$` cannot forward
+    to `make` through one signature for the same reason there are sixteen shapes: a single pack
+    cannot mix type and non-type parameters). So the table is now a VERBATIM COPY in each public
+    header — the only deliberate duplication in the library — and `tests/shapes.cpp` pins the copies
+    to identical shapes and identical result types, so divergence fails loudly at the offending
+    shape instead of waiting for the first user to write shape eleven. (Verified by deleting one row
+    from `$.hpp`'s copy: `shapes.cpp` failed at exactly that line.)
+
+    Paying that let the rest fall: `_.hpp` and `λ.hpp` became standalone, leaving `$.hpp → _.hpp`
+    (siblings, one directory) as the only edge — which is the thing `single/` existed to erase, and
+    #6 had already established that `$`-without-`_` is not a real use case. So `single/` (326 KB of
+    committed duplicate), `tools/amalgamate`, `tests/single_check.cpp`, and the CI freshness gate
+    are all deleted. `include/tacit/` is three files and they are the distribution. The guarantee
+    `single_check` used to give is now given directly, and more honestly, by a packaging step that
+    copies the headers into a bare directory and builds with the repo's include path absent.
+
+22. ~~`TACIT_NO_DOLLAR`.~~ **REMOVED** — it let `tacit.cppm` be built under `-pedantic-errors` by
+    dropping `$` from the interface. The objection that killed it: a macro cannot cross a module
+    boundary, so this was never a consumer's choice — it was the *producer's*, and it produced two
+    different modules both answering to `import tacit;`, one exporting `tacit::$` and one not. A
+    header may vary per TU; that is what a header is. A named module varying per build is a trap,
+    and all it bought was the ability to put `-pedantic-errors` on a file that is not yours. The
+    strict-CONSUMER leg stays in CI — that one proves the actual claim, that `import` injects names
+    rather than tokens. While there, `tacit.cppm` also picked up the one public name its export list
+    was missing (`tacit::blank`) and grouped the rest.
+
+23. ~~Include-order permutations.~~ **COVERED EXHAUSTIVELY** — `order_{cdl,cld,dcl,dlc,lcd,ldc}.cpp`
+    (c = core, d = dollar, l = lambda) are all six permutations of the three public headers, sharing
+    one body, `order_body.hpp`, so the only variable across the set is the order. The first instinct
+    was to sample two of the six; six IS the whole space and each TU costs ~0.4s, so covering it
+    exhaustively is both cheaper to justify and leaves no judgment call about which orders matter.
+    Ordered subsets are deliberately NOT enumerated — the triples put every header in first, middle
+    and last position — with one exception, `order_d_only.cpp`, below.
+
+    Three things this flushed out. First, the suite was accidentally blind: clang-format sorts
+    includes alphabetically and `$` < `_` < `λ`, so left to itself EVERY test lands in that one
+    order, and `_.hpp` before `$.hpp` — the order a person would write by hand — was compiled
+    nowhere once the `single/` reverse-order probe was deleted. Hence `clang-format off` in all six;
+    the order is the fixture, not a style slip. Second, `strict_using.cpp` was the only macro-leak
+    check and it includes the core ALONE, so nothing verified that `$.hpp` cleans up its own
+    (duplicated, per #21) copy of the generator table. The policy list moved to
+    `tests/no_generator_macros.hpp` — guard-free and declaration-free, so it can assert at as many
+    points as there are claims — and is now checked after `_.hpp` alone, after `$.hpp` alone, and
+    after all three in every order. Verified by deleting one `#undef` from `$.hpp`: `strict_using`
+    stayed green, the order tests failed. Third, `order_d_only.cpp` restores a case the IWYU pass
+    had silently removed: `dollar.cpp` used to be the only TU including `$.hpp` by itself, and
+    adding an explicit `<tacit/_.hpp>` to it (correctly) deleted the sole proof that `$.hpp` brings
+    its own core. It now has a file that exists for it on purpose.

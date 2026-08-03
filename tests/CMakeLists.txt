@@ -1,4 +1,4 @@
-foreach(t strict_using blanks showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift make stateless get tverbs sigils dollar lambda gates callables vocabulary_file readme)
+foreach(t strict_using blanks showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift make stateless get tverbs sigils dollar lambda gates callables shapes order_cdl order_cld order_dcl order_dlc order_lcd order_ldc order_d_only vocabulary_file readme)
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE tacit::tacit)
   target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -10,16 +10,3 @@ foreach(t strict_using blanks showcase extend tuple compose chaining combinators
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
-# The single-file headers: built against single/ ONLY — deliberately not linked to tacit::tacit, so
-# the include path proves the files are standalone. The include SPELLING is unchanged (single/ holds
-# a tacit/ directory), so the TU also #errors if TACIT_SINGLE_CORE_SEEN is absent — that is what
-# distinguishes the amalgamated headers from the repo ones here. single/ is generated
-# (tools/amalgamate) and committed; CI regenerates and diffs it, which keeps this test honest
-# against edits to include/tacit/.
-add_executable(single_check single_check.cpp)
-target_compile_features(single_check PRIVATE cxx_std_23) # usually carried by tacit::tacit, absent here
-target_include_directories(single_check PRIVATE ${CMAKE_SOURCE_DIR}/single)
-target_compile_options(single_check PRIVATE
-  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra>
-  $<$<CXX_COMPILER_ID:MSVC>:/W4;/utf-8;/Zc:preprocessor>)
-add_test(NAME single_check COMMAND single_check)

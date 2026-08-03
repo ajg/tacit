@@ -55,8 +55,8 @@ jobs:
         run: ctest --test-dir build -C Debug --output-on-failure --timeout 60
 
   macos:
-    # AppleClang against Apple's libc++ — a third standard library, and the one that hard-bans
-    # specializing std::tuple (libc++ 21+), which the experimental std-blanks header feature-tests.
+    # AppleClang against Apple's libc++ — a third standard library, and the one whose hard ban on
+    # specializing std::tuple (libc++ 21+) is part of why the std-blanks header was removed.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -87,30 +87,28 @@ jobs:
           clang++-18 $FLAGS -pedantic-errors -fmodule-file=tacit=tacit.pcm \
             tests/module_strict_check.cpp tacit.pcm -o module_strict_check
           ./module_strict_check
-      - name: Strict interface build (-DTACIT_NO_DOLLAR -pedantic-errors)
-        # ...and for builds that must compile even the interface strictly, the opt-out: the skipped
-        # `$` lines are only preprocessing tokens, which is pedantic-clean.
-        run: |
-          FLAGS="-std=c++23 --gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13 -Iinclude"
-          clang++-18 $FLAGS -pedantic-errors -DTACIT_NO_DOLLAR --precompile tacit.cppm -o tacit_strict.pcm
-          clang++-18 $FLAGS -pedantic-errors -fmodule-file=tacit=tacit_strict.pcm \
-            tests/module_strict_check.cpp tacit_strict.pcm -o module_strict_check2
-          ./module_strict_check2
 
   packaging:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Single-file headers are fresh and standalone
-        # tools/amalgamate is the only writer of single/; regenerate + diff makes drift impossible,
-        # and the reverse-order probe covers what the ctest single_check (natural order) cannot.
+      - name: Vendor by copying the headers (no include path, no CMake, no repo)
+        # The distribution claim: `_.hpp` and `λ.hpp` are each copy-ONE-file, and `$.hpp` wants only
+        # its sibling `_.hpp`. Proven by copying into a bare directory and building from there with
+        # the repo's own include path deliberately absent — if any header ever grows a dependency on
+        # a file that is not copied alongside it, this fails.
         run: |
-          python3 tools/amalgamate
-          git diff --exit-code single/
-          printf '#include <tacit/$.hpp>\n#include <tacit/_.hpp>\nusing tacit::_; using tacit::$;\nint main() { return ($(-1).abs() == 1 && (_ * 2)(21) == 42) ? 0 : 1; }\n' > /tmp/rev.cpp
-          g++-13 -std=c++23 -Wall -Wextra -I single /tmp/rev.cpp -o /tmp/rev && /tmp/rev
-          printf '#include <tacit/_.hpp>\nusing tacit::_;\nint main() { return (_ == 0)(0) ? 0 : 1; }\n' > /tmp/strict.cpp
-          g++-13 -std=c++23 -pedantic-errors -I single /tmp/strict.cpp -o /tmp/strict && /tmp/strict
+          mkdir -p /tmp/vendor/tacit
+          cp include/tacit/_.hpp include/tacit/λ.hpp /tmp/vendor/tacit/
+          printf '#include <tacit/_.hpp>\n#include <tacit/λ.hpp>\nusing tacit::_;\nint main(){ return ((_ * 2)(21) == 42 && λ(x){ return x + 1; }(41) == 42) ? 0 : 1; }\n' > /tmp/vendor/a.cpp
+          g++-13 -std=c++23 -Wall -Wextra -I /tmp/vendor /tmp/vendor/a.cpp -o /tmp/vendor/a && /tmp/vendor/a
+          # `_.hpp` alone, under -pedantic-errors: the conforming core carries no `$`
+          printf '#include <tacit/_.hpp>\nusing tacit::_;\nint main(){ return (_ == 0)(0) ? 0 : 1; }\n' > /tmp/vendor/b.cpp
+          g++-13 -std=c++23 -pedantic-errors -I /tmp/vendor /tmp/vendor/b.cpp -o /tmp/vendor/b && /tmp/vendor/b
+          # `$.hpp` next to `_.hpp`, and in the awkward order ($ first, so its own include resolves)
+          cp 'include/tacit/$.hpp' /tmp/vendor/tacit/
+          printf '#include <tacit/$.hpp>\n#include <tacit/_.hpp>\nusing tacit::_; using tacit::$;\nint main(){ return ($(-1).abs() == 1 && (_ * 2)(21) == 42) ? 0 : 1; }\n' > /tmp/vendor/c.cpp
+          g++-13 -std=c++23 -Wall -Wextra -I /tmp/vendor /tmp/vendor/c.cpp -o /tmp/vendor/c && /tmp/vendor/c
       - name: Consume via add_subdirectory (FetchContent / CPM path)
         run: |
           cmake -S tests/packaging -B build-pkg -DCMAKE_CXX_COMPILER=g++-13
