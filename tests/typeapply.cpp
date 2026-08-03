@@ -2,6 +2,7 @@
 // (fix-template-vary-args AND fix-args-vary-template); plus the experimental natural-spelling std
 // blanks in <tacit/experimental/std_blanks.hpp> (including it is the opt-in). `typelevel.cpp` covers
 // plain `bind`; this file covers what subsumes it.
+#include <tacit/_.hpp>
 #include <tacit/experimental/std_blanks.hpp>
 
 #include <array>

@@ -277,7 +277,8 @@ gives a plain value the vocabulary it may not have as members and applies it eag
 builds a value. It lives in `<tacit/$.hpp>`, and including the header is the opt-in — no macro:
 
 ```cpp
-#include <tacit/$.hpp>   // brings <tacit/_.hpp> with it
+#include <tacit/$.hpp>   // include what you use — $.hpp happens to pull _.hpp
+#include <tacit/_.hpp>   // in today, but don't lean on that
 using tacit::_;
 using tacit::$;
 
@@ -522,11 +523,13 @@ exists to make that mechanical.
 
 ## Build & test
 
-**Single file:** each header in [`single/`](single/) is standalone — copy one file anywhere and
-include it, nothing else needed. `single/_.hpp` is the conforming core, `single/$.hpp` the full
-surface (it contains `_` too), `single/λ.hpp` the lambda head; `_` and `$` may be mixed in either
-order. They are generated from `include/tacit/` by `tools/amalgamate` — CI regenerates and diffs, so
-they cannot drift; don't edit them.
+**Single file:** each header in [`single/tacit/`](single/tacit/) is standalone — copy one file into
+your tree and nothing else is needed. Keep it under a `tacit/` directory and the include spelling
+never changes: `#include <tacit/_.hpp>` means the same thing whether it came from `include/` or from
+one vendored file. `_.hpp` is the conforming core, `$.hpp` the full surface (it contains `_` too),
+`λ.hpp` the lambda head; `_` and `$` may be mixed in either order. They are generated from
+`include/tacit/` by `tools/amalgamate` — CI regenerates and diffs, so they cannot drift; don't edit
+them.
 
 Otherwise, header-only as usual — add `include/` to your include path, or use CMake:
 

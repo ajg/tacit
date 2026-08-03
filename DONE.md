@@ -92,12 +92,16 @@ so the std-blanks header skips that cell and exposes `TACIT_HAS_STD_TUPLE_BLANKS
     pipeline style, not identity.
 
 11. ~~Single-file distribution.~~ **DONE (option A)** — `include/tacit/` stays canonical;
-    `single/` holds generated, committed standalone forms of `_`, `$`, and `λ` (the shared core
-    wrapped in `TACIT_SINGLE_CORE_SEEN`, so `_`+`$` coexist in one TU either order; λ is
-    pass-through). `tools/amalgamate` (python3) is the only writer; CI regenerates + diffs (drift
-    impossible), compiles the reverse include order and a `-pedantic-errors` probe, and the ctest
-    `single_check` target builds against `single/` alone (not linked to tacit::tacit, so the include
-    path proves standalone-ness) on every matrix leg. std_blanks stays repo-only; modules are
+    `single/tacit/` holds generated, committed standalone forms of `_`, `$`, and `λ` (the shared
+    core wrapped in `TACIT_SINGLE_CORE_SEEN`, so `_`+`$` coexist in one TU either order; λ is
+    pass-through). The outputs keep their `tacit/` directory deliberately: `#include <tacit/_.hpp>`
+    is the *only* include spelling tacit ever asks for, and a vendored single file must not
+    introduce a second one — put `single/tacit/` on the include path and the source is unchanged.
+    `tools/amalgamate` (python3) is the only writer; CI regenerates + diffs (drift impossible),
+    compiles the reverse include order and a `-pedantic-errors` probe, and the ctest `single_check`
+    target builds against `single/` alone (not linked to tacit::tacit, so the include path proves
+    standalone-ness, and an `#error` on the absent guard proves it resolved to the amalgamated file
+    rather than the repo one) on every matrix leg. std_blanks stays repo-only; modules are
     orthogonal (`.cppm` GMFs resolve at interface-build time; `single/` never participates).
 
 12. ~~Pre-announcement readiness review.~~ **DONE** — two fresh-eyes reviews (README-as-first-contact

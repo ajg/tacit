@@ -7,6 +7,7 @@
 #define TACIT_VERBS balance
 #define TACIT_NOUNS shape
 #include <tacit/$.hpp>
+#include <tacit/_.hpp>
 #include <tacit/experimental/std_blanks.hpp>
 #include <tacit/λ.hpp>
 

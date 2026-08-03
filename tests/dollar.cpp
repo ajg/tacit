@@ -3,6 +3,7 @@
 // `$(x).f(a...)` == `_.f(a...)(normalize(x))` == `lift(x).f(a...)`. What this file pins is that `$`
 // is a *function* — namespaced, qualifiable, ADL-obeying — rather than a macro.
 #include <tacit/$.hpp>
+#include <tacit/_.hpp> // `_` is used below, so it is included: never lean on $.hpp's own include
 
 #include <algorithm>
 #include <cassert>
