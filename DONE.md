@@ -5,7 +5,7 @@ The decision ledger: what was done, what was declined, and why — newest at the
 when it exists, lives here too until it resolves; right now everything is settled. (Public asks —
 the things we *couldn't* do — are in ASKS.md.)
 
-Repo state: private, v0.5.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
+Repo state: public, v0.6.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
 AppleClang, plus modules (clang, with strict-consumer and strict-interface legs) and packaging
 (with the vendor-by-copy gate). 29 ctest targets; Intel ICX and EDG spot-checked via Compiler
 Explorer. `include/tacit/` is exactly three files — `_.hpp`, `$.hpp`, `λ.hpp` — and they ARE the

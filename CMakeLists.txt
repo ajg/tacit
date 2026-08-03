@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(tacit LANGUAGES CXX VERSION 0.5.0)
+project(tacit LANGUAGES CXX VERSION 0.6.0)
 
 include(GNUInstallDirs)
 
