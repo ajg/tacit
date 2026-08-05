@@ -199,26 +199,22 @@ concept not_fn = !is_fn_v<std::remove_cvref_t<T>>;
 // yields a plain `fn`, so a chain ends the moment the expression stops being a comparison.
 //
 // The rightmost operand is one of three things, hence three `last` shapes:
-template <class Y> struct always { // a bound value: independent of the fill  (`_ < y`)
-  Y y;
-  constexpr Y const &operator()(auto &&...) const noexcept { return y; }
-};
-template <class Y> always(Y) -> always<Y>;
 struct same { // the blank itself: the fill, untouched  (`y < _`)
   constexpr decltype(auto) operator()(auto &&x) const noexcept { return static_cast<decltype(x)>(x); }
 };
-struct bound {}; // the section's OWN bound operand — see below; carries no value of its own
-// (the fourth is a projection — `y < _.size()` stores the `fn` itself as `last`.)
+struct bound {}; // the link's OWN bound operand — see below; a tag, carrying no value of its own
+// (the third is a projection — `y < _.size()` stores the `fn` itself as `last`.)
 
 // Chain state for a bound operand: none if it is a placeholder (`_ < _` is a two-input comparator, not a link), and
 // none if the operand is move-only — the fold copies the whole link, so a move-only operand makes an unchained link:
 // `_ == mo` is an ordinary comparison closure, it just cannot be extended into a conjunction.
 //
-// Otherwise `bound`, a TAG rather than a value. `_ op y` is a `bind_r` (below), which already holds `y` as a named
-// member, so the chain state can point at that one operand instead of keeping a second copy of it. It used to keep
-// `always<Y>{y}` — an independent copy alongside the closure's own — which cost a duplicate of every bound operand
-// whether or not a chain was ever built: `_ == some_string` allocated twice, and `sizeof` was double what the mirror
-// form `some_string == _` cost. The value is now stored once and read through `fn::last`.
+// Otherwise `bound`, a TAG rather than a value. A comparison link is a `bind_r` / `proj_r` / `chain_link` (below),
+// each of which already holds the operand as a named member, so the chain state points at that one copy instead of
+// keeping its own. It used to store an independent `always<Y>{y}` alongside — a duplicate of every bound operand,
+// paid whether or not a chain was ever built: `_ == some_string` allocated twice and was double the size of the
+// mirror form `some_string == _`. The value is now stored once and read back through `fn::last`, and `always` is
+// gone with the duplication that motivated it.
 template <class Y>
 using last_for = std::conditional_t<is_blank_v<Y> || !std::is_copy_constructible_v<Y>, nochain, bound>;
 
@@ -558,6 +554,87 @@ template <class Op> struct bind_n { // (a, b) -> a op b
       noexcept(noexcept(Op{}(std::declval<A &&>(), std::declval<B &&>())))
     requires requires(A &&aa, B &&bb) { Op{}(static_cast<A &&>(aa), static_cast<B &&>(bb)); }
   { return Op{}(static_cast<A &&>(a), static_cast<B &&>(b)); }
+};
+
+// ---- and the same for the fn side ---------------------- where the operator composes THROUGH a projection.
+// `_.size() op y` is `x -> size(x) op y`: the projection runs first and the operator consumes its result. Five
+// shapes cover the whole fn-side table. The two that bind a value hold it as a named member for the same reason
+// `bind_r` does — `_.size() == str` used to keep that string in the closure AND again as chain state.
+//
+// The three that bind only projections are plain aggregates, so default-constructibility propagates from their
+// operands: `_.size() < _.size()` composes two empty projections and is therefore itself empty and default
+// constructible, which is the KNOWN LIMIT recorded in stateless.cpp — a capturing lambda could never be either.
+template <class Op, class G, class Y> struct proj_r { // (x...) -> g(x...) op y
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  TACIT_NO_UNIQUE_ADDRESS Y y;
+  constexpr proj_r()
+    requires std::is_empty_v<Y>
+  = default;
+  constexpr proj_r(G g_, Y y_) : g(static_cast<G &&>(g_)), y(static_cast<Y &&>(y_)) {}
+  template <class... X>
+  [[nodiscard]] constexpr decltype(auto) operator()(X &&...x) const
+      noexcept(noexcept(Op{}(std::declval<G const &>()(std::declval<X &&>()...), std::declval<Y const &>())))
+    requires requires(G const &gg, Y const &yy, X &&...xx) { Op{}(gg(static_cast<X &&>(xx)...), yy); }
+  { return Op{}(g(static_cast<X &&>(x)...), y); }
+};
+template <class Op, class X_, class G> struct proj_l { // (y...) -> x op g(y...)
+  TACIT_NO_UNIQUE_ADDRESS X_ x;
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  constexpr proj_l()
+    requires std::is_empty_v<X_>
+  = default;
+  constexpr proj_l(X_ x_, G g_) : x(static_cast<X_ &&>(x_)), g(static_cast<G &&>(g_)) {}
+  template <class... Y>
+  [[nodiscard]] constexpr decltype(auto) operator()(Y &&...y) const
+      noexcept(noexcept(Op{}(std::declval<X_ const &>(), std::declval<G const &>()(std::declval<Y &&>()...))))
+    requires requires(X_ const &xx, G const &gg, Y &&...yy) { Op{}(xx, gg(static_cast<Y &&>(yy)...)); }
+  { return Op{}(x, g(static_cast<Y &&>(y)...)); }
+};
+template <class Op, class G> struct proj_ln { // (a, b) -> g(a) op b
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  template <class A, class B>
+  [[nodiscard]] constexpr decltype(auto) operator()(A &&a, B &&b) const
+      noexcept(noexcept(Op{}(std::declval<G const &>()(std::declval<A &&>()), std::declval<B &&>())))
+    requires requires(G const &gg, A &&aa, B &&bb) { Op{}(gg(static_cast<A &&>(aa)), static_cast<B &&>(bb)); }
+  { return Op{}(g(static_cast<A &&>(a)), static_cast<B &&>(b)); }
+};
+template <class Op, class G> struct proj_rn { // (a, b) -> a op g(b)
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  template <class A, class B>
+  [[nodiscard]] constexpr decltype(auto) operator()(A &&a, B &&b) const
+      noexcept(noexcept(Op{}(std::declval<A &&>(), std::declval<G const &>()(std::declval<B &&>()))))
+    requires requires(G const &gg, A &&aa, B &&bb) { Op{}(static_cast<A &&>(aa), gg(static_cast<B &&>(bb))); }
+  { return Op{}(static_cast<A &&>(a), g(static_cast<B &&>(b))); }
+};
+template <class Op, class G, class H> struct proj_gh { // (a, b) -> g(a) op h(b)
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  TACIT_NO_UNIQUE_ADDRESS H h;
+  template <class A, class B>
+  [[nodiscard]] constexpr decltype(auto) operator()(A &&a, B &&b) const
+      noexcept(noexcept(Op{}(std::declval<G const &>()(std::declval<A &&>()),
+                             std::declval<H const &>()(std::declval<B &&>()))))
+    requires requires(G const &gg, H const &hh, A &&aa, B &&bb) {
+      Op{}(gg(static_cast<A &&>(aa)), hh(static_cast<B &&>(bb)));
+    }
+  { return Op{}(g(static_cast<A &&>(a)), h(static_cast<B &&>(b))); }
+};
+// The comparison fold: `(… op0 m) op y` == `(… op0 m) && (m op y)`, where `m` is the previous link's rightmost
+// operand, recovered through `fn::last`. The fills are used TWICE (once by the link, once by `last`), so they are
+// taken as lvalues rather than forwarded — moving into the first use would empty them before the second.
+template <class Op, class G, class Y> struct chain_link {
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  TACIT_NO_UNIQUE_ADDRESS Y y;
+  constexpr chain_link()
+    requires std::is_empty_v<Y>
+  = default;
+  constexpr chain_link(G g_, Y y_) : g(static_cast<G &&>(g_)), y(static_cast<Y &&>(y_)) {}
+  template <class... X>
+  [[nodiscard]] constexpr bool operator()(X &&...x) const
+    requires requires(G const &gg, Y const &yy, X &...xx) {
+      static_cast<bool>(gg(xx...));
+      static_cast<bool>(Op{}(gg.last(xx...), yy));
+    }
+  { return static_cast<bool>(g(x...)) && static_cast<bool>(Op{}(g.last(x...), y)); }
 };
 } // namespace detail
 
@@ -1067,37 +1144,30 @@ template <class F, class Last> struct fn {
   }
   // Operator sections as hidden friends — found by ADL, including across a module boundary (`import tacit;`): `g op
   // value` / `value op g` compose to a unary fn; `g op h` is binary.
-#define TACIT_FN_OP(op)                                                                                                \
+#define TACIT_FN_OP(Op, op)                                                                                            \
   template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                                     \
     if constexpr (is_blank_v<Y>) /* `g op _` is two-input, like `_ op _` — not a bound value */                        \
-      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
-        return g(std::forward<decltype(a)>(a)) op std::forward<decltype(b)>(b); }, nary{}};                            \
+      return tacit::detail::fn{proj_ln<Op, fn>{g}, nary{}};                                                            \
     else                                                                                                               \
-      return tacit::detail::fn{                                                                                        \
-        [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; }};                    \
+      return tacit::detail::fn{proj_r<Op, fn, Y>{g, std::move(y)}};                                                               \
   }                                                                                                                    \
   template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {                                   \
     if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                                       \
-      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
-        return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};                            \
+      return tacit::detail::fn{proj_rn<Op, fn>{g}, nary{}};                                                            \
     else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                            \
-      return tacit::detail::fn{                                                                                        \
-          [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                                                 \
-            return x op g(std::forward<decltype(y)>(y)...); }};                                                        \
+      return tacit::detail::fn{proj_l<Op, std::decay_t<X>, fn>{std::forward<X>(x), g}};                                \
     else { /* non-copyable LVALUE (stream): by reference, e.g. cout << _.size(); rvalues: rejected */                  \
       static_assert(std::is_lvalue_reference_v<X>,                                                                     \
                     "binding a non-copyable temporary would dangle: name it first");                                   \
-      return tacit::detail::fn{                                                                                        \
-          [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }};                 \
+      return tacit::detail::fn{proj_l<Op, std::remove_reference_t<X> &, fn>{x, g}};                                    \
     }                                                                                                                  \
   }                                                                                                                    \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {                      \
-    return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                                            \
-      return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                                       \
-    }, nary{}};                                                                                                        \
+    return tacit::detail::fn{proj_gh<Op, fn, fn<G, L>>{g, h}, nary{}};                                                 \
   }
-  TACIT_FN_OP(+) TACIT_FN_OP(-) TACIT_FN_OP(*) TACIT_FN_OP(/) TACIT_FN_OP(%) TACIT_FN_OP(^)
-  TACIT_FN_OP(&) TACIT_FN_OP(|) TACIT_FN_OP(&&) TACIT_FN_OP(||) TACIT_FN_OP(<<) TACIT_FN_OP(>>)
+  TACIT_FN_OP(op_add, +)   TACIT_FN_OP(op_sub, -)   TACIT_FN_OP(op_mul, *)   TACIT_FN_OP(op_div, /)
+  TACIT_FN_OP(op_mod, %)   TACIT_FN_OP(op_xor, ^)   TACIT_FN_OP(op_and, &)   TACIT_FN_OP(op_or, |)
+  TACIT_FN_OP(op_land, &&) TACIT_FN_OP(op_lor, ||)  TACIT_FN_OP(op_shl, <<)  TACIT_FN_OP(op_shr, >>)
 #undef TACIT_FN_OP
   // `->*` through a projection keeps its natural meaning too (via `memsel`, like the blank's
   // section): `_.front() ->* &W::x` == `xs -> (*front(xs)).x`.
@@ -1126,11 +1196,10 @@ template <class F, class Last> struct fn {
   // itself a comparison section, the new one folds into a conjunction against that section's rightmost operand rather
   // than against its bool RESULT. Every link records its own rightmost operand, so chains of any length and any mix of
   // the six operators compose.
-#define TACIT_FN_COMPARE(op)                                                                                           \
+#define TACIT_FN_COMPARE(Op, op)                                                                                       \
   template <not_fn Y> [[nodiscard]] friend constexpr auto operator op(fn g, Y y) {                                     \
     if constexpr (is_blank_v<Y>) /* `g op _` is the two-input comparator, like `_ op _` */                             \
-      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
-        return g(std::forward<decltype(a)>(a)) op std::forward<decltype(b)>(b); }, nary{}};                            \
+      return tacit::detail::fn{proj_ln<Op, fn>{g}, nary{}};                                                            \
     else if constexpr (fn::chained) { /* `(… op0 m) op y` == `(… op0 m) && (m op y)` */                                \
       /* Folding against a bool is never what the spelling means: `(_ < 10) == false` would become                     \
          `(x < 10) && (10 == false)` — an ALWAYS-FALSE closure, when the writer meant negation.                        \
@@ -1138,39 +1207,27 @@ template <class F, class Last> struct fn {
       static_assert(!std::is_same_v<std::remove_cvref_t<Y>, bool>,                                                     \
                     "a comparison chain folded against a bool: `(_ < 10) == false` means "                             \
                     "`(x < 10) && (10 == false)`, not negation — write `_ >= 10`, or negate with `!`");                \
-      return tacit::detail::fn{[g, y](auto &&...x) -> bool {                                                           \
-                                 return static_cast<bool>(g(x...)) &&                                                  \
-                                        static_cast<bool>(g.last(x...) op y);                                          \
-                               },                                                                                      \
-                               tacit::detail::always{y}};                                                              \
+      return tacit::detail::fn{chain_link<Op, fn, Y>{g, std::move(y)}, last_for<Y>{}};                                            \
     }                                                                                                                  \
     else /* first link: unchanged behaviour, plus the state a following comparison folds against */                    \
-      return tacit::detail::fn{                                                                                        \
-          [g, y](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op y; },                   \
-          tacit::detail::always{y}};                                                                                   \
+      return tacit::detail::fn{proj_r<Op, fn, Y>{g, std::move(y)}, last_for<Y>{}};                                                \
   }                                                                                                                    \
   template <not_fn X> [[nodiscard]] friend constexpr auto operator op(X &&x, fn g) {                                   \
     if constexpr (is_blank_v<std::remove_cvref_t<X>>) /* `_ op g`, the mirror */                                       \
-      return tacit::detail::fn{[g](auto &&a, auto &&b) -> decltype(auto) {                                             \
-        return std::forward<decltype(a)>(a) op g(std::forward<decltype(b)>(b)); }, nary{}};                            \
+      return tacit::detail::fn{proj_rn<Op, fn>{g}, nary{}};                                                            \
     else if constexpr (std::is_copy_constructible_v<std::remove_cvref_t<X>>)                                            \
-      return tacit::detail::fn{                                                                                        \
-          [g, x = std::forward<X>(x)](auto &&...y) -> decltype(auto) {                                                 \
-            return x op g(std::forward<decltype(y)>(y)...); }, g}; /* rightmost operand: g */                          \
+      return tacit::detail::fn{proj_l<Op, std::decay_t<X>, fn>{std::forward<X>(x), g}, g}; /* rightmost: g */          \
     else { /* non-copyable LVALUE (stream): by reference; rvalues: rejected */                                         \
       static_assert(std::is_lvalue_reference_v<X>,                                                                     \
                     "binding a non-copyable temporary would dangle: name it first");                                   \
-      return tacit::detail::fn{                                                                                        \
-          [g, &x](auto &&...y) -> decltype(auto) { return x op g(std::forward<decltype(y)>(y)...); }, g};              \
+      return tacit::detail::fn{proj_l<Op, std::remove_reference_t<X> &, fn>{x, g}, g};                                 \
     }                                                                                                                  \
   }                                                                                                                    \
   template <class G, class L> [[nodiscard]] friend constexpr auto operator op(fn g, fn<G, L> h) {                      \
-    return tacit::detail::fn{[g, h](auto &&a, auto &&b) -> decltype(auto) {                                            \
-      return g(std::forward<decltype(a)>(a)) op h(std::forward<decltype(b)>(b));                                       \
-    }, nary{}};                                                                                                        \
+    return tacit::detail::fn{proj_gh<Op, fn, fn<G, L>>{g, h}, nary{}};                                                 \
   }
-  TACIT_FN_COMPARE(==) TACIT_FN_COMPARE(!=) TACIT_FN_COMPARE(<)
-  TACIT_FN_COMPARE(>)  TACIT_FN_COMPARE(<=) TACIT_FN_COMPARE(>=)
+  TACIT_FN_COMPARE(op_eq, ==) TACIT_FN_COMPARE(op_ne, !=) TACIT_FN_COMPARE(op_lt, <)
+  TACIT_FN_COMPARE(op_gt, >)  TACIT_FN_COMPARE(op_le, <=) TACIT_FN_COMPARE(op_ge, >=)
 #undef TACIT_FN_COMPARE
   // Comma: a projection joins a comma section as an operand like any other, so `(_.size(), _.front())` is `(a, b) ->
   // {size(a), front(b)}`. Without these the built-in comma applies instead — it evaluates and DISCARDS the left
