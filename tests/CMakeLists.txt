@@ -1,4 +1,4 @@
-foreach(t strict_using blanks showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift make stateless get tverbs sigils dollar lambda gates callables shapes order_cdl order_cld order_dcl order_dlc order_lcd order_ldc order_d_only vocabulary_file readme)
+foreach(t strict_using blanks showcase extend tuple compose chaining combinators typelevel typeproject typeapply operators views compare nary vocabulary lift make stateless get tverbs sigils dollar lambda gates callables properties allocation shapes order_cdl order_cld order_dcl order_dlc order_lcd order_ldc order_d_only vocabulary_file readme)
   add_executable(${t} ${t}.cpp)
   target_link_libraries(${t} PRIVATE tacit::tacit)
   target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
