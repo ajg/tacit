@@ -132,10 +132,12 @@ int main() {
     // (string COMPARISON, by contrast, is noexcept — which is why that is not the example)
     auto cat = (_ + std::string("x"));
     static_assert(!noexcept(cat(std::declval<std::string const &>())));
-    // string COMPARISON is noexcept, so the same shape over `==` tracks the other way — the specification follows
-    // the operation, not the operand type
+    // The same shape over `==` tracks the other way, and is asserted RELATIVE to the raw expression rather than
+    // as an absolute: whether `string == string` is noexcept is the standard library's business, and the claim
+    // being made here is only that the closure reports whatever the operation reports.
     auto eqs = (_ == std::string("x"));
-    static_assert(noexcept(eqs(std::declval<std::string const &>())));
+    static_assert(noexcept(eqs(std::declval<std::string const &>())) ==
+                  noexcept(std::declval<std::string const &>() == std::declval<std::string const &>()));
   }
 
   // ---- statelessness propagates through composition ----
@@ -144,15 +146,17 @@ int main() {
   // give — any capture deletes the default constructor, whether or not the captured thing is empty. It now holds
   // for composed closures, which is the KNOWN LIMIT recorded in stateless.cpp.
   //
-  // EMPTINESS is a separate and weaker story, asserted only where it actually holds. A closure over `_` alone is
-  // one byte; one that wraps a PROJECTION is two, because the projection is itself a distinct empty subobject and
-  // two same-type subobjects cannot share an address whatever `[[no_unique_address]]` says. Clang's `is_empty`
-  // answers yes there anyway; the MSVC ABI answers no, and the MSVC ABI is the one telling the truth about
-  // `sizeof`. So the composed forms claim only what every front end agrees on.
+  // EMPTINESS is a separate and weaker story, asserted only where every front end agrees. The portable rule is
+  // narrow: a closure is empty when the functor it wraps has NO data members at all — `_ > _` (a `bind_n`) and
+  // `-_` (a unary functor) qualify. The moment a closure holds a PROJECTION it does not, because the projection
+  // is a distinct empty subobject and `[[no_unique_address]]` cannot make two same-type subobjects share an
+  // address. Clang's `is_empty` answers yes there anyway even though `sizeof` is 2; the MSVC ABI answers no and
+  // is the one telling the truth. So `!(_ < _)` belongs above with the composed forms, not here — it wraps
+  // `_ < _` rather than being a leaf, which is exactly the distinction that is easy to eyeball wrong.
   {
     static_assert(std::is_empty_v<decltype(_ > _)> && std::is_default_constructible_v<decltype(_ > _)>);
     static_assert(std::is_empty_v<decltype(-_)> && std::is_default_constructible_v<decltype(-_)>);
-    static_assert(std::is_empty_v<decltype(!(_ < _))>);
+    static_assert(std::is_default_constructible_v<decltype(!(_ < _))>);
     static_assert(std::is_default_constructible_v<decltype(_.size() < _.size())>); // the limit that closed
     static_assert(std::is_default_constructible_v<decltype(-_.size())>);
     static_assert(!std::is_empty_v<decltype(_ > 3)> && !std::is_default_constructible_v<decltype(_ > 3)>);

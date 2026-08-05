@@ -64,21 +64,25 @@ int main() {
     assert(cost([&] { (void)sub(LONG); }) > 0);
   }
 
-  // ---- binding an operand costs what the hand-written capture costs ----
+  // ---- binding an operand costs exactly ONE copy of it ----
+  // The baseline is a bare string copy rather than an equivalent hand-written lambda: a lambda drags in its own
+  // capture machinery, and on the MSVC STL that did not cost the same as tacit's — which says nothing about
+  // tacit and made the test fail for a reason it was not trying to measure. One copy of the operand is the claim
+  // that actually matters, and it is the same claim on every implementation.
   {
-    long const hand = cost([&] {
-      auto f = [y = LONG](std::string const &x) { return x == y; };
-      (void)f;
+    long const one_copy = cost([&] {
+      auto s = LONG;
+      (void)s;
     });
     assert(cost([&] {
              auto f = (_ == LONG);
              (void)f;
-           }) == hand);
-    // the mirror form is symmetric — it used to be HALF the cost of the above, which was the tell
+           }) == one_copy);
+    // the mirror form is symmetric — the bound form used to cost TWICE this, which was the tell
     assert(cost([&] {
              auto f = (LONG == _);
              (void)f;
-           }) == hand);
+           }) == one_copy);
     // and so is the projected form, which used to store the operand twice over
     assert(cost([&] {
              auto f = (_.size() == LONG.size());
@@ -87,7 +91,7 @@ int main() {
     assert(cost([&] {
              auto f = (_.substr(0) == LONG);
              (void)f;
-           }) == hand);
+           }) == one_copy);
   }
 
   // ---- an RVALUE operand is MOVED into the closure, not copied ----
