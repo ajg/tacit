@@ -93,8 +93,17 @@ int main() {
       auto f = (_.substr(0) == LONG);
       (void)f;
     });
+    long const projected_mirror = cost([&] {
+      auto f = (LONG == _.substr(0));
+      (void)f;
+    });
+    // Each form is compared against ITS OWN mirror, never across families. A projected section carries the
+    // projection's own bound argument as well as the operand, so it does not cost the same as a plain one under
+    // MSVC's Debug CRT — comparing the two would be measuring that difference rather than the duplication this
+    // guards. Within a family the overhead cancels, and each pair still covers exactly one storage site:
+    // `bind_r` against `bind_l`, and `proj_r` against `proj_l`.
     assert(bound == mirror);
-    assert(bound == projected);
+    assert(projected == projected_mirror);
     // and not vacuous: the operand really is stored, so binding costs at least a copy of it
     assert(one_copy > 0 && bound >= one_copy);
     // a section over an operand that never touches the heap costs nothing at all
@@ -105,29 +114,53 @@ int main() {
   }
 
   // ---- an RVALUE operand is MOVED into the closure, not copied ----
+  // Stated as "strictly cheaper than the lvalue case" rather than "costs nothing". Under MSVC's Debug CRT every
+  // string OBJECT carries an iterator-debugging proxy that is allocated per construction, so even a move costs
+  // something there and a flat `== 0` would be asserting the absence of an allocation that the standard library,
+  // not tacit, is making. Cheaper-than-copying is the property being claimed, it is what forwarding buys, and it
+  // holds on every implementation.
   {
-    auto s = LONG;
-    assert(cost([&] {
-             auto f = (_ == std::move(s));
-             (void)f;
-           }) == 0);
-    auto t = LONG;
-    assert(cost([&] {
-             auto f = (_ + std::move(t));
-             (void)f;
-           }) == 0);
+    auto lv = LONG;
+    long const by_copy = cost([&] {
+      auto f = (_ == lv);
+      (void)f;
+    });
+    auto rv = LONG;
+    long const by_move = cost([&] {
+      auto f = (_ == std::move(rv));
+      (void)f;
+    });
+    assert(by_move < by_copy);
+
+    auto lv2 = LONG;
+    long const cat_copy = cost([&] {
+      auto f = (_ + lv2);
+      (void)f;
+    });
+    auto rv2 = LONG;
+    long const cat_move = cost([&] {
+      auto f = (_ + std::move(rv2));
+      (void)f;
+    });
+    assert(cat_move < cat_copy);
   }
 
   // ---- combinators do not copy what they do not touch ----
   // `first`/`second` forward the pair, so the untouched element moves out of an rvalue rather than being copied.
+  // Same formulation: the rvalue path must be strictly cheaper than the lvalue path. Un-forwarding either of them
+  // makes the two equal, which is what this catches.
   {
-    auto p = std::pair<int, std::string>{1, LONG};
-    assert(cost([&] { (void)tacit::first(_ + 1)(std::move(p)); }) == 0);
-    auto q = std::pair<std::string, int>{LONG, 1};
-    assert(cost([&] { (void)tacit::second(_ + 1)(std::move(q)); }) == 0);
+    auto p1 = std::pair<int, std::string>{1, LONG};
+    auto p2 = std::pair<int, std::string>{1, LONG};
+    assert(cost([&] { (void)tacit::first(_ + 1)(std::move(p1)); }) < cost([&] { (void)tacit::first(_ + 1)(p2); }));
+
+    auto q1 = std::pair<std::string, int>{LONG, 1};
+    auto q2 = std::pair<std::string, int>{LONG, 1};
+    assert(cost([&] { (void)tacit::second(_ + 1)(std::move(q1)); }) < cost([&] { (void)tacit::second(_ + 1)(q2); }));
+
     // the comma section, likewise
-    auto a = LONG, b = LONG;
-    assert(cost([&] { (void)(_, _)(std::move(a), std::move(b)); }) == 0);
+    auto a1 = LONG, b1 = LONG, a2 = LONG, b2 = LONG;
+    assert(cost([&] { (void)(_, _)(std::move(a1), std::move(b1)); }) < cost([&] { (void)(_, _)(a2, b2); }));
   }
 
   // ---- a stateless closure is free ----
