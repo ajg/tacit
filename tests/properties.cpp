@@ -139,16 +139,22 @@ int main() {
   }
 
   // ---- statelessness propagates through composition ----
-  // A closure holding nothing is empty AND default-constructible, so it works as a container's comparator TYPE.
-  // The second of those is what a capturing lambda could never give: any capture deletes the default constructor,
-  // whether or not the captured thing is empty. A closure that binds a VALUE must remain neither — default
-  // constructing `_ > 3` would silently compare against a value-initialised operand.
+  // DEFAULT-CONSTRUCTIBILITY is the portable claim and the useful one: it is what lets a closure be a container's
+  // comparator TYPE rather than only a comparator value, and it is precisely what a capturing lambda can never
+  // give — any capture deletes the default constructor, whether or not the captured thing is empty. It now holds
+  // for composed closures, which is the KNOWN LIMIT recorded in stateless.cpp.
+  //
+  // EMPTINESS is a separate and weaker story, asserted only where it actually holds. A closure over `_` alone is
+  // one byte; one that wraps a PROJECTION is two, because the projection is itself a distinct empty subobject and
+  // two same-type subobjects cannot share an address whatever `[[no_unique_address]]` says. Clang's `is_empty`
+  // answers yes there anyway; the MSVC ABI answers no, and the MSVC ABI is the one telling the truth about
+  // `sizeof`. So the composed forms claim only what every front end agrees on.
   {
     static_assert(std::is_empty_v<decltype(_ > _)> && std::is_default_constructible_v<decltype(_ > _)>);
-    static_assert(std::is_empty_v<decltype(_.size() < _.size())> &&
-                  std::is_default_constructible_v<decltype(_.size() < _.size())>);
     static_assert(std::is_empty_v<decltype(-_)> && std::is_default_constructible_v<decltype(-_)>);
     static_assert(std::is_empty_v<decltype(!(_ < _))>);
+    static_assert(std::is_default_constructible_v<decltype(_.size() < _.size())>); // the limit that closed
+    static_assert(std::is_default_constructible_v<decltype(-_.size())>);
     static_assert(!std::is_empty_v<decltype(_ > 3)> && !std::is_default_constructible_v<decltype(_ > 3)>);
     static_assert(!std::is_default_constructible_v<decltype(_ += 1)>);
   }

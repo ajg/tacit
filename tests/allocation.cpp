@@ -117,9 +117,11 @@ int main() {
   }
 
   // ---- a stateless closure is free ----
-  // Not a heap claim but the same family: these hold nothing, so there is nothing to copy anywhere.
+  // Not a heap claim but the same family: these hold nothing, so there is nothing to copy anywhere. Only the leaf
+  // forms are asserted EMPTY — a closure wrapping a projection is two bytes, not one, because the projection is a
+  // distinct empty subobject of its own (see the note in properties.cpp). Its portable claim is default
+  // constructibility, which lives there.
   static_assert(std::is_empty_v<decltype(_ > _)>);
-  static_assert(std::is_empty_v<decltype(_.size() < _.size())>);
   static_assert(std::is_empty_v<decltype(-_)>);
 
   return 0;
