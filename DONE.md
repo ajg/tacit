@@ -5,9 +5,9 @@ The decision ledger: what was done, what was declined, and why — newest at the
 when it exists, lives here too until it resolves; right now everything is settled. (Public asks —
 the things we *couldn't* do — are in ASKS.md.)
 
-Repo state: public, v0.6.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
+Repo state: public, v0.7.0 tagged. CI matrix: clang++-18/22, g++-13/16, MSVC v143, clang-cl,
 AppleClang, plus modules (clang, with strict-consumer and strict-interface legs) and packaging
-(with the vendor-by-copy gate). 29 ctest targets; Intel ICX and EDG spot-checked via Compiler
+(with the vendor-by-copy gate). 38 ctest targets; Intel ICX and EDG spot-checked via Compiler
 Explorer. `include/tacit/` is exactly three files — `_.hpp`, `$.hpp`, `λ.hpp` — and they ARE the
 distribution: no generator, no second copy, nothing to keep fresh.
 
@@ -241,3 +241,64 @@ distribution: no generator, no second copy, nothing to keep fresh.
     had silently removed: `dollar.cpp` used to be the only TU including `$.hpp` by itself, and
     adding an explicit `<tacit/_.hpp>` to it (correctly) deleted the sole proof that `$.hpp` brings
     its own core. It now has a file that exists for it on purpose.
+
+24. ~~Closures built as capturing lambdas.~~ **REBUILT AS NAMED FUNCTION OBJECTS** — every operator
+    is now a stateless functor spelling its expression ONCE, with the two things that follow from
+    that expression attached to it: the constraint that it is valid, and the exception specification
+    it inherits. Ten closure shapes (`bind_r/l/n`, `proj_r/l/ln/rn/gh/un`, `chain_link`) are written
+    once each instead of one lambda per shape per token.
+
+    The question that started it was whether const-correctness and `noexcept` were right. Const was
+    already right — better than `std::function`, whose call operator is const but invokes a
+    non-const target, because `fn` constrains on `F const&` being invocable and so never wraps a
+    non-const-callable target at all. The real defect was next door and unrelated to either: the
+    section lambdas carried NO constraint, so `is_invocable_v<decltype(_ + 1) const&, std::string>`
+    was a hard error escaping a lambda body rather than a clean `false`. That broke concept-based
+    dispatch, `std::ranges`' own constraints, and every wrapper's constructibility check. Member and
+    CPO forwarders had always been constrained; this finishes the pattern rather than starting one.
+
+    What the rebuild bought, measured rather than asserted: `_ == long_string` went from 2
+    allocations and double the size of its mirror form to 1 and parity — it had been storing the
+    operand twice, once in the closure and once again as chain state, paid whether or not a chain
+    was ever built. `_.size() == long_string` went 3 → 1. `first`/`second` stopped deep-copying the
+    pair element they never look at (1 → 0 on an rvalue) — they simply weren't forwarding, while
+    their own `***` cousin always had. And a COMPOSED closure became default-constructible, closing
+    the known limit that `stateless.cpp` had carried, for exactly the reason its note predicted: any
+    lambda capture deletes the default constructor, empty capture or not. `_ > 3` stays correctly
+    stateful, since default-constructing it would silently compare against a value-initialised
+    operand.
+
+    `noexcept` was taken only where it fell out free — the functors carry it, so operator sections
+    propagate it correctly. It was DECLINED for member chains: `section::operator()` has a
+    multi-statement body no specification can mirror, and hand-writing one there is the single place
+    a too-narrow spec turns a propagating exception into `std::terminate`. That decision is pinned by
+    a `static_assert` in `properties.cpp` carrying its own reasoning, so it cannot rot into an
+    oversight.
+
+    Also declined, for the record: making the fn-side `g op y` path avoid one move (it takes its
+    operand by value where the blank side takes `Y&&`) — real asymmetry, but free in optimised
+    builds and only visible under MSVC's Debug CRT, against non-trivial risk to the deduction path.
+    And composed-closure EMPTINESS, which is not pending but impossible: two subobjects of the same
+    type cannot share an address, so `_.size() < _.size()` is two bytes everywhere.
+
+    Two compiler bugs surfaced, neither ours. MSVC 19.44 — the VS 17.14 toolset the runner's v143
+    leg uses — cannot satisfy a constraint written over an ABBREVIATED parameter referred to as
+    `decltype(a)`; the closure ends up with no viable call operator and the damage shows up far away
+    (`std::function<bool(int)> f = _ > 3;` stops converting). Hence the long `template <class A,
+    class B>` spelling, with the reason recorded above `TACIT_OP2`; 19.51 has it fixed. And clang 18
+    SEGFAULTS compiling `std::sort`/`std::ranges::sort` against a default-constructed composed
+    comparator — `std::set` is fine, clang 19 is fine — so `stateless.cpp` demonstrates the closed
+    limit with a container. Both were reduced against the exact failing versions on Compiler
+    Explorer rather than by CI round-trip.
+
+    Two new test targets pin what had never been asserted: `properties.cpp` (const-invocability,
+    SFINAE-friendliness, `noexcept` tracking the operation, statelessness) and `allocation.cpp`
+    (allocation counts through a replaced `operator new`). Getting those PORTABLE took five
+    corrections and is the lesson worth keeping: the claims that failed were all cases of asserting
+    what clang does as though it were what the standard guarantees. `is_empty` answers yes for
+    composed closures where `sizeof` says 2 and the MSVC ABI says no; under MSVC's Debug CRT every
+    string object carries an iterator-debugging proxy, so a copy costs two allocations and a MOVE
+    costs one, making every absolute count wrong there. Duplication is now guarded by `sizeof` at
+    compile time — which is what the property actually IS — and every remaining runtime claim is
+    relative (each form against its own mirror; the rvalue path strictly cheaper than the lvalue
+    path) or is zero, which is portable because it is zero.

@@ -354,10 +354,23 @@ emptiness comes from `[[msvc::no_unique_address]]`, so on that one front end
 `std::set<int, decltype(_ > _)>` is a pointer-width larger. MSVC's own front end compresses it.
 
 Binding a *value* correctly forfeits this — `decltype(_ > 3)` is not default-constructible, because
-it has to keep the 3. A **composed** closure (`_.size() < _.size()`) isn't stateless today either:
-sections are built as capturing lambdas, and any capture deletes the default constructor. Ordering by
-a projection wants the value form anyway — `std::ranges::sort(v, {}, _.size())` — which needs no type
-at all.
+it has to keep the 3.
+
+A **composed** closure reaches the type world too, so ordering by a projection no longer has to fall
+back to the value form (`std::ranges::sort(v, {}, _.size())`):
+
+```cpp
+std::set<std::string, decltype(_.size() < _.size())> by_length{"ccc", "a", "bb"};
+```
+
+It is default-constructible but not *empty*: a composed closure holds its operand closures as
+distinct subobjects, and two subobjects of the same type cannot share an address whatever
+`[[no_unique_address]]` says. So the costs-nothing claim above stays scoped to closures built purely
+from `_`, which really do hold nothing at all.
+
+† clang 18 **crashes** — a front-end segfault, not a diagnostic — compiling `std::sort` or
+`std::ranges::sort` against a default-constructed *composed* comparator. Containers are unaffected
+(they default-construct the same comparator and are fine), and clang 19 and later are clean.
 
 ### The conforming spellings: `lift` and `make`
 
