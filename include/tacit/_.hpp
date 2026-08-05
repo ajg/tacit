@@ -497,12 +497,18 @@ namespace detail {
 // So the operator gets hoisted into a stateless functor that spells it ONCE, with the two things that follow
 // from the expression attached to it: the constraint that it is valid, and the exception specification it
 // inherits. Everything built on top gets both for free, and a new token is one line rather than six.
+// PORTABILITY, and the reason these spell `template <class A, class B>` rather than the shorter `auto&&`: MSVC 19.44
+// (VS 17.14 — what the CI runner's v143 toolset is) fails to satisfy a constraint written over an ABBREVIATED
+// parameter referred to as `decltype(a)`. The closure then has no viable call operator at all, and the damage shows up
+// far away — `std::function<bool(int)> f = _ > 3;` stops converting, and calls from inside other closures stop
+// resolving. MSVC 19.51 has it fixed; the runner does not, so the long spelling stays until the floor moves.
 #define TACIT_OP2(Name, op)                                                                                            \
   struct Name {                                                                                                        \
-    [[nodiscard]] static constexpr decltype(auto) operator()(auto &&a, auto &&b)                                       \
-        noexcept(noexcept(static_cast<decltype(a)>(a) op static_cast<decltype(b)>(b)))                                 \
-      requires requires { static_cast<decltype(a)>(a) op static_cast<decltype(b)>(b); }                                \
-    { return static_cast<decltype(a)>(a) op static_cast<decltype(b)>(b); }                                             \
+    template <class A, class B>                                                                                        \
+    [[nodiscard]] static constexpr decltype(auto) operator()(A &&a, B &&b)                                             \
+        noexcept(noexcept(static_cast<A &&>(a) op static_cast<B &&>(b)))                                               \
+      requires requires(A &&aa, B &&bb) { static_cast<A &&>(aa) op static_cast<B &&>(bb); }                            \
+    { return static_cast<A &&>(a) op static_cast<B &&>(b); }                                                           \
   };
 TACIT_OP2(op_add, +) TACIT_OP2(op_sub, -) TACIT_OP2(op_mul, *) TACIT_OP2(op_div, /)
 TACIT_OP2(op_mod, %) TACIT_OP2(op_xor, ^) TACIT_OP2(op_and, &) TACIT_OP2(op_or, |)
@@ -528,10 +534,11 @@ template <class Op, class Y> struct bind_r { // x -> x op y
     requires std::is_empty_v<Y>
   = default;
   constexpr bind_r(Y y_) : y(static_cast<Y &&>(y_)) {} // `Y&&` not `std::move`: Y may be a reference
-  [[nodiscard]] constexpr decltype(auto) operator()(auto &&x) const
-      noexcept(noexcept(Op{}(static_cast<decltype(x)>(x), std::declval<Y const &>())))
-    requires requires(Y const &yy) { Op{}(static_cast<decltype(x)>(x), yy); }
-  { return Op{}(static_cast<decltype(x)>(x), y); }
+  template <class X> // explicit, not `auto&&` — see the portability note above TACIT_OP2
+  [[nodiscard]] constexpr decltype(auto) operator()(X &&x) const
+      noexcept(noexcept(Op{}(std::declval<X &&>(), std::declval<Y const &>())))
+    requires requires(X &&xx, Y const &yy) { Op{}(static_cast<X &&>(xx), yy); }
+  { return Op{}(static_cast<X &&>(x), y); }
 };
 template <class Op, class X> struct bind_l { // y -> x op y  (X may be a reference: the non-copyable lvalue case)
   TACIT_NO_UNIQUE_ADDRESS X x;
@@ -539,16 +546,18 @@ template <class Op, class X> struct bind_l { // y -> x op y  (X may be a referen
     requires std::is_empty_v<X>
   = default;
   constexpr bind_l(X x_) : x(static_cast<X &&>(x_)) {}
-  [[nodiscard]] constexpr decltype(auto) operator()(auto &&y) const
-      noexcept(noexcept(Op{}(std::declval<X const &>(), static_cast<decltype(y)>(y))))
-    requires requires(X const &xx) { Op{}(xx, static_cast<decltype(y)>(y)); }
-  { return Op{}(x, static_cast<decltype(y)>(y)); }
+  template <class Y>
+  [[nodiscard]] constexpr decltype(auto) operator()(Y &&y) const
+      noexcept(noexcept(Op{}(std::declval<X const &>(), std::declval<Y &&>())))
+    requires requires(X const &xx, Y &&yy) { Op{}(xx, static_cast<Y &&>(yy)); }
+  { return Op{}(x, static_cast<Y &&>(y)); }
 };
 template <class Op> struct bind_n { // (a, b) -> a op b
-  [[nodiscard]] static constexpr decltype(auto) operator()(auto &&a, auto &&b)
-      noexcept(noexcept(Op{}(static_cast<decltype(a)>(a), static_cast<decltype(b)>(b))))
-    requires requires { Op{}(static_cast<decltype(a)>(a), static_cast<decltype(b)>(b)); }
-  { return Op{}(static_cast<decltype(a)>(a), static_cast<decltype(b)>(b)); }
+  template <class A, class B>
+  [[nodiscard]] static constexpr decltype(auto) operator()(A &&a, B &&b)
+      noexcept(noexcept(Op{}(std::declval<A &&>(), std::declval<B &&>())))
+    requires requires(A &&aa, B &&bb) { Op{}(static_cast<A &&>(aa), static_cast<B &&>(bb)); }
+  { return Op{}(static_cast<A &&>(a), static_cast<B &&>(b)); }
 };
 } // namespace detail
 
@@ -1034,11 +1043,11 @@ template <class F, class Last> struct fn {
   // The rightmost operand, however this link happens to hold it. `bound` means the link IS a `bind_r`, which already
   // stores the operand as a member — so it is read from there rather than duplicated into the chain state. Every
   // other shape (the `same` mirror, a projection) is a callable over the fills, and answers by being invoked.
-  [[nodiscard]] constexpr decltype(auto) last(auto &&...x) const {
+  template <class... X> [[nodiscard]] constexpr decltype(auto) last(X &&...x) const {
     if constexpr (std::is_same_v<Last, bound>)
       return (f.y);
     else
-      return last_(static_cast<decltype(x)>(x)...);
+      return last_(static_cast<X &&>(x)...);
   }
 
   // Constrained on the WRAPPED callable being const-invocable, which is what keeps `fn` free of
@@ -1720,11 +1729,20 @@ template <class F, class... Gs> [[nodiscard]] constexpr auto compose(F f, Gs... 
 template <class... Fs> [[nodiscard]] constexpr auto fanout(Fs... fs) {
   return detail::fn{[fs...](auto &&x) { return std::tuple{fs(x)...}; }};
 }
+// The pair is FORWARDED into both halves, so applying one of these to an rvalue moves the untouched element rather
+// than copying it — `first(f)(std::move(p))` on a `pair<int, string>` allocates nothing, where taking `p` as an
+// lvalue cost a full copy of the string it never looked at. Forwarding twice is sound here because `get<0>` and
+// `get<1>` name DISJOINT subobjects: neither sees the other's moved-from state. Same shape as the `***` product
+// combinator above, which has always forwarded.
 template <class F> [[nodiscard]] constexpr auto first(F f) {
-  return detail::fn{[f](auto &&p) { return std::pair{f(std::get<0>(p)), std::get<1>(p)}; }};
+  return detail::fn{[f]<class P>(P &&p) {
+    return std::pair{f(std::get<0>(std::forward<P>(p))), std::get<1>(std::forward<P>(p))};
+  }};
 }
 template <class F> [[nodiscard]] constexpr auto second(F f) {
-  return detail::fn{[f](auto &&p) { return std::pair{std::get<0>(p), f(std::get<1>(p))}; }};
+  return detail::fn{[f]<class P>(P &&p) {
+    return std::pair{std::get<0>(std::forward<P>(p)), f(std::get<1>(std::forward<P>(p)))};
+  }};
 }
 
 // ------------------------------------------------------------------------------------------------
