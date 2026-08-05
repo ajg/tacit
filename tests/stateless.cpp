@@ -70,14 +70,33 @@ int main() {
     assert((_ > _)(2, 1));
   }
 
-  // KNOWN LIMIT. A COMPOSED closure — one whose operands are themselves closures, as in
-  // `_.size() < _.size()` or `!(_ < _)` — is not stateless today, even though it holds nothing that
-  // matters. The section machinery builds closures as capturing lambdas, and *any* capture deletes
-  // the default constructor, whether or not the captured object is empty. Nothing about the design
-  // requires that: building those closures from named function objects with
-  // `[[no_unique_address]]` members instead of lambdas would let statelessness propagate, and would
-  // leave `_ > 3` correctly stateful. Until then, ordering by a projection wants the value form
-  // (`std::ranges::sort(v, {}, _.size())`), which needs no type at all.
+  // ---- a COMPOSED closure reaches the type world too ----
+  // This was a KNOWN LIMIT here, and the note that stood in its place prescribed the fix: a closure
+  // whose operands are themselves closures — `_.size() < _.size()`, `!(_ < _)` — held nothing that
+  // mattered yet could not be default-constructed, because the sections were built as capturing
+  // lambdas and *any* capture deletes the default constructor, empty capture or not. Building them
+  // from named function objects with `[[no_unique_address]]` members instead is what `_.hpp` now
+  // does, so the limit is gone and ordering by a projection no longer has to fall back to the value
+  // form (`std::ranges::sort(v, {}, _.size())`).
+  {
+    static_assert(std::is_default_constructible_v<decltype(_.size() < _.size())>);
+    static_assert(std::is_default_constructible_v<decltype(!(_ < _))>);
+    static_assert(!std::is_default_constructible_v<decltype(_ > 3)>); // binding a value still forfeits it
+    std::vector<std::string> v{"ccc", "a", "bb"};
+    std::ranges::sort(v, decltype(_.size() < _.size()){}); // the closure as a TYPE, not a value
+    assert(v[0] == "a" && v[2] == "ccc");
+  }
+
+  // WHAT DID NOT FOLLOW, and cannot. Only default-constructibility propagates; EMPTINESS does not. A
+  // composed closure holds its operand closures as distinct subobjects, and two subobjects of the
+  // same type cannot share an address whatever `[[no_unique_address]]` says — `_.size() < _.size()`
+  // is two bytes, not one, everywhere. (Clang's `is_empty` answers yes regardless; `sizeof` is the
+  // honest witness and the MSVC ABI agrees with it.) That is a fact about object layout rather than
+  // a limit waiting to be lifted, so the zero-cost claim above stays scoped to closures built purely
+  // from `_`, which really do hold nothing at all. `properties.cpp` carries the same claims across
+  // every closure form, and `allocation.cpp` guards the size directly.
+  static_assert(sizeof(decltype(_ > _)) == 1);
+  static_assert(sizeof(decltype(_.size() < _.size())) > 1);
 
   return 0;
 }
