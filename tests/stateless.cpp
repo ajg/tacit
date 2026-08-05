@@ -82,9 +82,17 @@ int main() {
     static_assert(std::is_default_constructible_v<decltype(_.size() < _.size())>);
     static_assert(std::is_default_constructible_v<decltype(!(_ < _))>);
     static_assert(!std::is_default_constructible_v<decltype(_ > 3)>); // binding a value still forfeits it
-    std::vector<std::string> v{"ccc", "a", "bb"};
-    std::ranges::sort(v, decltype(_.size() < _.size()){}); // the closure as a TYPE, not a value
-    assert(v[0] == "a" && v[2] == "ccc");
+    // A container takes it as its comparator TYPE and default-constructs it — the same crossing
+    // `decltype(_ > _)` makes above, now reachable through a projection.
+    //
+    // Deliberately a container rather than a sort: clang 18, the oldest front end CI pins, SEGFAULTS
+    // compiling `std::sort` OR `std::ranges::sort` against a default-constructed composed comparator
+    // (reduced against 18.1.0 directly; 19 and later are clean, and every other front end CI runs is
+    // fine). `std::set` default-constructs the comparator just the same and is unaffected on every
+    // version. The crash is the compiler's rather than this library's, but there is no reason for
+    // this file to be what trips over it.
+    std::set<std::string, decltype(_.size() < _.size())> by_length{"ccc", "a", "bb"};
+    assert(by_length.begin()->size() == 1 && by_length.rbegin()->size() == 3);
   }
 
   // WHAT DID NOT FOLLOW, and cannot. Only default-constructibility propagates; EMPTINESS does not. A
