@@ -65,17 +65,25 @@ int main() {
   }
 
   // ---- binding an operand stores it ONCE ----
-  // Asserted as SYMMETRY between the forms rather than as an absolute count, because the absolute is not portable:
-  // under MSVC's Debug CRT, closure construction costs more than one bare string copy — reproducibly, on both
-  // Windows front ends, and not because of anything tacit does (the by-value constructor was ruled out by
-  // measuring it against a forwarding one on MSVC 19.44 directly: identical, and identical to clang). The Debug
-  // CRT's own container bookkeeping is the likely source and it is not worth chasing further, because it is not
-  // the property being pinned.
+  // Asserted on SIZE, at compile time, because that is what the property actually is. Storing an operand twice
+  // doubles the closure; it does not reliably double an allocation count, and counting was the wrong instrument:
+  // the fn-side `g op y` operator takes its operand by value and then moves it into a by-value constructor
+  // parameter, one move more than the mirror path. That move is free everywhere it matters and costs an
+  // iterator-debugging proxy under MSVC's Debug CRT, so the two paths legitimately differ in allocations while
+  // storing exactly the same thing. `sizeof` says what is stored and says it identically on every implementation.
   //
-  // Symmetry IS the property. The bug this guards against was asymmetric: `_ == y` kept the operand twice (once
-  // in the closure, once as chain state) while the mirror `y == _` kept it once, so the bound form cost double
-  // the mirror form and double the projected one. Comparing tacit against tacit in the same build catches exactly
-  // that, and cannot be perturbed by which standard library is underneath.
+  // The bug this guards: a comparison section kept the operand in the closure AND again as chain state, so these
+  // were twice the size of the operand they held.
+  static_assert(sizeof(decltype(_ == LONG)) == sizeof(std::string));
+  static_assert(sizeof(decltype(LONG == _)) == sizeof(std::string));
+  static_assert(sizeof(decltype(_ + LONG)) == sizeof(std::string));
+  // The projected forms hold the operand plus the projection, so an exact size is not predictable — alignment
+  // decides the rest. The claim that matters survives anyway, stated as an upper bound: whatever else is in
+  // there, the OPERAND is not in it twice.
+  static_assert(sizeof(decltype(_.substr(0) == LONG)) < 2 * sizeof(std::string));
+  static_assert(sizeof(decltype(LONG == _.substr(0))) < 2 * sizeof(std::string));
+
+  // ---- and binding really does cost a copy of it, not nothing ----
   {
     long const one_copy = cost([&] {
       auto s = LONG;
@@ -85,26 +93,6 @@ int main() {
       auto f = (_ == LONG);
       (void)f;
     });
-    long const mirror = cost([&] {
-      auto f = (LONG == _);
-      (void)f;
-    });
-    long const projected = cost([&] { // the fn-side form, which stored the operand twice over as well
-      auto f = (_.substr(0) == LONG);
-      (void)f;
-    });
-    long const projected_mirror = cost([&] {
-      auto f = (LONG == _.substr(0));
-      (void)f;
-    });
-    // Each form is compared against ITS OWN mirror, never across families. A projected section carries the
-    // projection's own bound argument as well as the operand, so it does not cost the same as a plain one under
-    // MSVC's Debug CRT — comparing the two would be measuring that difference rather than the duplication this
-    // guards. Within a family the overhead cancels, and each pair still covers exactly one storage site:
-    // `bind_r` against `bind_l`, and `proj_r` against `proj_l`.
-    assert(bound == mirror);
-    assert(projected == projected_mirror);
-    // and not vacuous: the operand really is stored, so binding costs at least a copy of it
     assert(one_copy > 0 && bound >= one_copy);
     // a section over an operand that never touches the heap costs nothing at all
     assert(cost([&] {
