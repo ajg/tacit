@@ -345,7 +345,7 @@ what a comparator or hasher template parameter wants. `decltype` is the whole cr
 std::set<int, decltype(_ > _)> s{3, 1, 2};   // descending — *s.begin() == 3
 $<std::set, _, decltype(_ > _)>(3, 1, 2);    // deduce the element, order by `>`
 static_assert(sizeof(std::set<int, decltype(_ > _)>)
-              == sizeof(std::set<int>));     //  nothing*
+              == sizeof(std::set<int>));     // costs nothing*
 ```
 
 \* The closure type is empty everywhere; whether a container then *compresses* it is the standard
@@ -365,7 +365,7 @@ std::set<std::string, decltype(_.size() < _.size())> by_length{"ccc", "a", "bb"}
 
 It is default-constructible but not *empty*: a composed closure holds its operand closures as
 distinct subobjects, and two subobjects of the same type cannot share an address whatever
-`[[no_unique_address]]` says. So the -nothing claim above stays scoped to closures built purely
+`[[no_unique_address]]` says. So the costs-nothing claim above stays scoped to closures built purely
 from `_`, which really do hold nothing at all.
 
 † clang 18 **crashes** — a front-end segfault, not a diagnostic — compiling `std::sort` or
@@ -414,7 +414,7 @@ elided, is recorded in `tacit_extras.md`.
 
 Two more surfaces exist and are deliberately *not* documented here. **Synthetic sigils**
 (`#define TACIT_SIGILS`) add Haskell's arrow spellings as glued token sequences — `f &&& g` fanout,
-`f *** g` product, `f >>* g` / `f <<* g` compose — with the full maximal-munch sweep, the , and
+`f *** g` product, `f >>* g` / `f <<* g` compose — with the full maximal-munch sweep, the costs, and
 the precedence rules in `tacit_extras.md`. The **experimental type level** (`bind`/`apply`/`quote`,
 ungated and always present) lives in the same file, along with the design log for everything above.
 That file is the lab notebook; this one is the manual.
@@ -485,7 +485,7 @@ whether they exist.
 and re-exports everything — `_`, `$`, `lift`, `make`, and the type-level names. One module, on
 purpose: the `_.hpp` / `$.hpp` split exists because `#include` injects *tokens* (a TU that includes
 `$.hpp` lexes `$`, which `-pedantic-errors` rejects), but an `import` injects only *names*, and a
-name  nothing until you spell it. A strictly-conforming TU can `import tacit;` and keep to
+name costs nothing until you spell it. A strictly-conforming TU can `import tacit;` and keep to
 `lift`/`make` — CI compiles exactly that consumer with `-pedantic-errors` against the `$`-bearing
 interface. The one TU that does lex `$` is `tacit.cppm` itself, so build that file without
 `-pedantic-errors`; there is no knob for it, deliberately, since a knob there would make two
@@ -514,8 +514,10 @@ with the fix in the message: a bool folded into a comparison chain ("write `_ >=
 with `!`"), and a non-copyable temporary bound into a closure ("name it first").
 
 **Runtime.** A tacit closure is an ordinary lambda composition — no type erasure, nothing virtual;
-codegen spot-checks against hand-written lambdas are in `tacit_extras.md`. More detailed
-measurements regarding space/time and comparisons across compilers/platforms are forthcoming.
+codegen spot-checks against hand-written lambdas are in `tacit_extras.md`. Space and allocation
+behaviour is asserted rather than assumed — `tests/allocation.cpp` pins that calling a closure
+allocates nothing, that binding an operand costs exactly one copy of it, and that an rvalue operand
+is moved rather than copied. Throughput benchmarks across compilers are not yet part of the suite.
 
 **MSVC** runs the full suite in CI (see Requirements for its two required flags).
 
