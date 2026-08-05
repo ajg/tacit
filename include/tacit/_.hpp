@@ -224,7 +224,12 @@ using last_for = std::conditional_t<is_blank_v<Y> || !std::is_copy_constructible
 // `.*` gap-filler: `.*` is not overloadable, so a section is the only way to spell it point-free.
 // Data members only in practice — `(*x).*pmf` is valid solely as the head of a call, so member
 // FUNCTIONS stay with the arrow proxy (`_->f(args)`).
-inline constexpr auto memsel = []<class X, class Y>(X &&x, Y const &y) -> decltype(auto) {
+// Constrained on being one of those two, so `_ ->* pm` applied to something that is neither a native `->*` nor
+// dereferenceable is NOT INVOCABLE rather than a hard error out of this body. Without the clause the `else` branch
+// is instantiated and fails outside the immediate context, which no caller's own constraint can intercept.
+inline constexpr auto memsel = []<class X, class Y>(X &&x, Y const &y) -> decltype(auto)
+  requires requires { std::forward<X>(x)->*y; } || requires { (*std::forward<X>(x)).*y; }
+{
   if constexpr (requires { std::forward<X>(x)->*y; })
     return std::forward<X>(x)->*y;
   else
@@ -511,7 +516,44 @@ TACIT_OP2(op_mod, %) TACIT_OP2(op_xor, ^) TACIT_OP2(op_and, &) TACIT_OP2(op_or, 
 TACIT_OP2(op_land, &&) TACIT_OP2(op_lor, ||) TACIT_OP2(op_shl, <<) TACIT_OP2(op_shr, >>)
 TACIT_OP2(op_eq, ==) TACIT_OP2(op_ne, !=) TACIT_OP2(op_lt, <) TACIT_OP2(op_gt, >)
 TACIT_OP2(op_le, <=) TACIT_OP2(op_ge, >=)
+// Compound assignment is binary too, so it reuses the same shapes; there is no `y op= _` form (that would assign
+// into y), which is why only the bind-right and two-blank shapes are ever built from these.
+TACIT_OP2(op_addeq, +=) TACIT_OP2(op_subeq, -=) TACIT_OP2(op_muleq, *=) TACIT_OP2(op_diveq, /=)
+TACIT_OP2(op_modeq, %=) TACIT_OP2(op_xoreq, ^=) TACIT_OP2(op_andeq, &=) TACIT_OP2(op_oreq, |=)
+TACIT_OP2(op_shleq, <<=) TACIT_OP2(op_shreq, >>=) TACIT_OP2(op_assign, =)
 #undef TACIT_OP2
+
+// Unary, prefix and postfix. Distinct names from the binary tokens they share a spelling with — `-` is both
+// `op_sub` and `un_neg`, told apart by arity, exactly as the operators themselves are.
+#define TACIT_OP1(Name, op)                                                                                            \
+  struct Name {                                                                                                        \
+    template <class A>                                                                                                 \
+    [[nodiscard]] static constexpr decltype(auto) operator()(A &&a) noexcept(noexcept(op static_cast<A &&>(a)))        \
+      requires requires(A &&aa) { op static_cast<A &&>(aa); }                                                          \
+    { return op static_cast<A &&>(a); }                                                                                \
+  };
+#define TACIT_OP1_POST(Name, op)                                                                                       \
+  struct Name {                                                                                                        \
+    template <class A>                                                                                                 \
+    [[nodiscard]] static constexpr decltype(auto) operator()(A &&a) noexcept(noexcept(static_cast<A &&>(a) op))        \
+      requires requires(A &&aa) { static_cast<A &&>(aa) op; }                                                          \
+    { return static_cast<A &&>(a) op; }                                                                                \
+  };
+TACIT_OP1(un_deref, *) TACIT_OP1(un_neg, -) TACIT_OP1(un_pos, +) TACIT_OP1(un_not, !)
+TACIT_OP1(un_bnot, ~) TACIT_OP1(un_addr, &) TACIT_OP1(un_inc, ++) TACIT_OP1(un_dec, --)
+TACIT_OP1_POST(un_post_inc, ++) TACIT_OP1_POST(un_post_dec, --)
+#undef TACIT_OP1
+#undef TACIT_OP1_POST
+
+// `->*` keeps its NATURAL meaning through `memsel` (see below), so it is a binary functor like any other and reuses
+// the bind shapes; this is the one whose expression is a call rather than an operator token.
+struct op_memsel {
+  template <class A, class B>
+  [[nodiscard]] static constexpr decltype(auto) operator()(A &&a, B &&b)
+      noexcept(noexcept(memsel(std::declval<A &&>(), std::declval<B &&>())))
+    requires requires(A &&aa, B &&bb) { memsel(static_cast<A &&>(aa), static_cast<B &&>(bb)); }
+  { return memsel(static_cast<A &&>(a), static_cast<B &&>(b)); }
+};
 
 // ---- the three binary closure shapes ------------------------------------------------ each written once.
 // `bind_r` is `_ op y`, `bind_l` is `x op _`, `bind_n` is the two-blank `_ op _`. Parameterised on the
@@ -618,6 +660,14 @@ template <class Op, class G, class H> struct proj_gh { // (a, b) -> g(a) op h(b)
     }
   { return Op{}(g(static_cast<A &&>(a)), h(static_cast<B &&>(b))); }
 };
+template <class Op, class G> struct proj_un { // (x...) -> op g(x...)
+  TACIT_NO_UNIQUE_ADDRESS G g;
+  template <class... X>
+  [[nodiscard]] constexpr decltype(auto) operator()(X &&...x) const
+      noexcept(noexcept(Op{}(std::declval<G const &>()(std::declval<X &&>()...))))
+    requires requires(G const &gg, X &&...xx) { Op{}(gg(static_cast<X &&>(xx)...)); }
+  { return Op{}(g(static_cast<X &&>(x)...)); }
+};
 // The comparison fold: `(… op0 m) op y` == `(… op0 m) && (m op y)`, where `m` is the previous link's rightmost
 // operand, recovered through `fn::last`. The fills are used TWICE (once by the link, once by `last`), so they are
 // taken as lvalues rather than forwarded — moving into the first use would empty them before the second.
@@ -692,17 +742,15 @@ template <class Op, class G, class Y> struct chain_link {
 //  `_ ->* &W::x` == `p -> (*p).x`, on raw pointers, smart pointers and iterators alike.
 #define TACIT_MEMPTR                                                                                                   \
   template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator->*(self, Y&& y) {  \
-    return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                                      \
-             { return tacit::detail::memsel(std::forward<decltype(x)>(x), y); }};                                      \
+    return tacit::detail::fn{                                                                                          \
+        tacit::detail::bind_r<tacit::detail::op_memsel, std::decay_t<Y>>{std::forward<Y>(y)}};                         \
   }                                                                                                                    \
   template <class X> requires tacit::detail::not_fn<X> [[nodiscard]] friend constexpr auto operator->*(X&& x, self) {  \
-    return tacit::detail::fn{[x = std::forward<X>(x)](auto&& y) -> decltype(auto)                                      \
-             { return tacit::detail::memsel(x, std::forward<decltype(y)>(y)); }};                                      \
+    return tacit::detail::fn{                                                                                          \
+        tacit::detail::bind_l<tacit::detail::op_memsel, std::decay_t<X>>{std::forward<X>(x)}};                         \
   }                                                                                                                    \
   [[nodiscard]] friend constexpr auto operator->*(self, self) {                                                        \
-    return tacit::detail::fn{[](auto&& x, auto&& y) -> decltype(auto)                                                  \
-             { return tacit::detail::memsel(std::forward<decltype(x)>(x), std::forward<decltype(y)>(y)); },            \
-             tacit::detail::nary{}};                                                                                   \
+    return tacit::detail::fn{tacit::detail::bind_n<tacit::detail::op_memsel>{}, tacit::detail::nary{}};                \
   }
 
 //  One unary operator (prefix). Coexists with a same-token binary section (`*_` vs `_ * y`) — they
@@ -720,32 +768,25 @@ template <class Op, class G, class Y> struct chain_link {
 #define TACIT_MARK_AMP(L) TACIT_PLAIN(L)
 #define TACIT_MARK_STAR(L) TACIT_PLAIN(L)
 #endif
-#define TACIT_UNARY_AS(op, WRAP)                                                                                       \
+#define TACIT_UNARY_AS(Op, op, WRAP)                                                                                   \
   [[nodiscard]] friend constexpr auto operator op(self) {                                                              \
-    [[maybe_unused]] auto tacit_mark_inner_ =                                                                           \
-        tacit::detail::fn{[](auto&& x) -> decltype(auto) { return std::forward<decltype(x)>(x); }};                    \
-    return WRAP([](auto&& x) -> decltype(auto)                                                                         \
-             { return op std::forward<decltype(x)>(x); });                                                             \
+    [[maybe_unused]] auto tacit_mark_inner_ = tacit::detail::fn{tacit::detail::same{}};                                \
+    return WRAP(tacit::detail::Op{});                                                                                  \
   }
-#define TACIT_UNARY(op) TACIT_UNARY_AS(op, TACIT_PLAIN)
+#define TACIT_UNARY(Op, op) TACIT_UNARY_AS(Op, op, TACIT_PLAIN)
 //  Postfix form (the trailing int disambiguates), for ++ / --.
-#define TACIT_UNARY_POST(op)                                                                                           \
-  [[nodiscard]] friend constexpr auto operator op(self, int) {                                                         \
-    return tacit::detail::fn{[](auto&& x) -> decltype(auto)                                                            \
-             { return std::forward<decltype(x)>(x) op; }};                                                             \
-  }
+#define TACIT_UNARY_POST(Op, op)                                                                                       \
+  [[nodiscard]] friend constexpr auto operator op(self, int) { return tacit::detail::fn{tacit::detail::Op{}}; }
 //  One compound-assignment section: `_ op y` == x -> (x op y). Mutating and left-operand-only (there
 //  is no `y op _` form — that would assign into y). The argument binds by reference, so it mutates
 //  the caller's lvalue: e.g. std::ranges::for_each(v, _ += 1).
-#define TACIT_ASSIGN(op)                                                                                               \
+#define TACIT_ASSIGN(Op, op)                                                                                           \
   template <class Y> requires tacit::detail::not_fn<Y> [[nodiscard]] friend constexpr auto operator op(self, Y&& y) {  \
     if constexpr (tacit::detail::is_blank_v<Y>) /* `_ op= _` is two-input, like `_ op _` */                            \
-      return tacit::detail::fn{[](auto&& a, auto&& b) -> decltype(auto)                                                \
-               { return std::forward<decltype(a)>(a) op std::forward<decltype(b)>(b); },                               \
-               tacit::detail::nary{}};                                                                                 \
+      return tacit::detail::fn{tacit::detail::bind_n<tacit::detail::Op>{}, tacit::detail::nary{}};                     \
     else                                                                                                               \
-      return tacit::detail::fn{[y = std::forward<Y>(y)](auto&& x) -> decltype(auto)                                    \
-               { return std::forward<decltype(x)>(x) op y; }};                                                         \
+      return tacit::detail::fn{                                                                                        \
+          tacit::detail::bind_r<tacit::detail::Op, std::decay_t<Y>>{std::forward<Y>(y)}};                              \
   }
 
 //  Reflective members (defined empty when reflection is off, so TACIT_CORE need not branch).
@@ -811,11 +852,13 @@ template <class Op, class G, class Y> struct chain_link {
   TACIT_SECTION(op_mod, %)   TACIT_SECTION(op_xor, ^)   TACIT_SECTION(op_and, &)   TACIT_SECTION(op_or, |)              \
   TACIT_SECTION(op_land, &&) TACIT_SECTION(op_lor, ||)  TACIT_SECTION(op_shl, <<)  TACIT_SECTION(op_shr, >>)            \
   TACIT_MEMPTR                                                                                                         \
-  TACIT_UNARY_AS(*, TACIT_MARK_STAR) TACIT_UNARY(-) TACIT_UNARY(+) TACIT_UNARY(!) TACIT_UNARY(~)                 \
-  TACIT_UNARY_AS(&, TACIT_MARK_AMP)                            \
-  TACIT_UNARY(++) TACIT_UNARY(--) TACIT_UNARY_POST(++) TACIT_UNARY_POST(--)                                            \
-  TACIT_ASSIGN(+=) TACIT_ASSIGN(-=) TACIT_ASSIGN(*=) TACIT_ASSIGN(/=) TACIT_ASSIGN(%=)                                 \
-  TACIT_ASSIGN(^=) TACIT_ASSIGN(&=) TACIT_ASSIGN(|=) TACIT_ASSIGN(<<=) TACIT_ASSIGN(>>=)                               \
+  TACIT_UNARY_AS(un_deref, *, TACIT_MARK_STAR) TACIT_UNARY_AS(un_addr, &, TACIT_MARK_AMP)                              \
+  TACIT_UNARY(un_neg, -)  TACIT_UNARY(un_pos, +)  TACIT_UNARY(un_not, !)  TACIT_UNARY(un_bnot, ~)                       \
+  TACIT_UNARY(un_inc, ++) TACIT_UNARY(un_dec, --)                                                                      \
+  TACIT_UNARY_POST(un_post_inc, ++) TACIT_UNARY_POST(un_post_dec, --)                                                   \
+  TACIT_ASSIGN(op_addeq, +=) TACIT_ASSIGN(op_subeq, -=) TACIT_ASSIGN(op_muleq, *=)                                     \
+  TACIT_ASSIGN(op_diveq, /=) TACIT_ASSIGN(op_modeq, %=) TACIT_ASSIGN(op_xoreq, ^=)                                     \
+  TACIT_ASSIGN(op_andeq, &=) TACIT_ASSIGN(op_oreq, |=) TACIT_ASSIGN(op_shleq, <<=) TACIT_ASSIGN(op_shreq, >>=)         \
   template <class Y>                                                                                                   \
     requires tacit::detail::not_fn<Y> && (!std::is_same_v<std::remove_cvref_t<Y>, self>)                               \
   [[nodiscard]] constexpr auto operator=(Y&& y) const {                                                                \
@@ -1247,20 +1290,18 @@ template <class F, class Last> struct fn {
     return tacit::detail::make_comma(g, h);
   }
   // Unary operators compose through the projection: `op g` == x -> op g(x).
-#define TACIT_FN_UNARY_AS(op, WRAP)                                                                                    \
+#define TACIT_FN_UNARY_AS(Op, op, WRAP)                                                                                \
   [[nodiscard]] friend constexpr auto operator op(fn g) {                                                              \
     [[maybe_unused]] auto tacit_mark_inner_ = g;                                                                        \
-    return WRAP([g](auto &&...x) -> decltype(auto) { return op g(std::forward<decltype(x)>(x)...); });                 \
+    return WRAP((proj_un<Op, fn>{g}));                                                                                 \
   }
-#define TACIT_FN_UNARY(op) TACIT_FN_UNARY_AS(op, TACIT_PLAIN)
-#define TACIT_FN_UNARY_POST(op)                                                                                        \
-  [[nodiscard]] friend constexpr auto operator op(fn g, int) {                                                         \
-    return tacit::detail::fn{                                                                                          \
-        [g](auto &&...x) -> decltype(auto) { return g(std::forward<decltype(x)>(x)...) op; }};                         \
-  }
-  TACIT_FN_UNARY_AS(*, TACIT_MARK_STAR) TACIT_FN_UNARY(-) TACIT_FN_UNARY(+) TACIT_FN_UNARY(!)
-  TACIT_FN_UNARY(~) TACIT_FN_UNARY_AS(&, TACIT_MARK_AMP)
-  TACIT_FN_UNARY(++) TACIT_FN_UNARY(--) TACIT_FN_UNARY_POST(++) TACIT_FN_UNARY_POST(--)
+#define TACIT_FN_UNARY(Op, op) TACIT_FN_UNARY_AS(Op, op, TACIT_PLAIN)
+#define TACIT_FN_UNARY_POST(Op, op)                                                                                    \
+  [[nodiscard]] friend constexpr auto operator op(fn g, int) { return tacit::detail::fn{proj_un<Op, fn>{g}}; }
+  TACIT_FN_UNARY_AS(un_deref, *, TACIT_MARK_STAR) TACIT_FN_UNARY_AS(un_addr, &, TACIT_MARK_AMP)
+  TACIT_FN_UNARY(un_neg, -)  TACIT_FN_UNARY(un_pos, +)  TACIT_FN_UNARY(un_not, !)  TACIT_FN_UNARY(un_bnot, ~)
+  TACIT_FN_UNARY(un_inc, ++) TACIT_FN_UNARY(un_dec, --)
+  TACIT_FN_UNARY_POST(un_post_inc, ++) TACIT_FN_UNARY_POST(un_post_dec, --)
 #undef TACIT_FN_UNARY
 #undef TACIT_FN_UNARY_POST
   // (`|` is a bitwise section like `&`, above — general composition is `tacit::compose`, not `f | g`.) Vocabulary —
